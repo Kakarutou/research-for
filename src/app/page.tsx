@@ -1,65 +1,146 @@
-import Image from "next/image";
+import TopNav from "@/components/TopNav";
+import SearchBox from "@/components/SearchBox";
+import PredictionsSection from "@/components/PredictionsSection";
+
+const FEATURES = [
+  {
+    num: "01",
+    label: "Research",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+        <path d="M11 8v6M8 11h6" strokeLinecap="round"/>
+      </svg>
+    ),
+    title: "One screen, every signal",
+    desc: "Short interest, filings, ATM offerings, share counts, news — all in one place per ticker.",
+  },
+  {
+    num: "02",
+    label: "Predict",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
+      </svg>
+    ),
+    title: "Daily market calls",
+    desc: "Predict NASDAQ, KOSPI, Nikkei, or BTC direction each session. Compete globally.",
+  },
+  {
+    num: "03",
+    label: "Earn",
+    icon: (
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+      </svg>
+    ),
+    title: "On-chain rewards",
+    desc: "Accuracy earns RFC tokens. Build streaks. Your track record lives on-chain.",
+  },
+];
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div style={{ minHeight: "100vh", position: "relative" }}>
+      <div style={{
+        position: "fixed", inset: 0, pointerEvents: "none", opacity: 0.6, zIndex: 1, mixBlendMode: "multiply",
+        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+      }} />
+
+      <TopNav />
+      {/* Hero */}
+      <section style={{ position: "relative", zIndex: 5, display: "flex", flexDirection: "column", alignItems: "center", padding: "64px 24px 56px" }}>
+        <div style={{
+          fontFamily: "var(--font-mono), monospace", fontSize: 13,
+          color: "var(--hero-label)", letterSpacing: "0.22em", textTransform: "uppercase",
+          marginBottom: 20, display: "inline-flex", alignItems: "center", gap: 12,
+          textShadow: "0 1px 10px rgba(0,0,0,0.5)",
+        }}>
+          <span style={{ width: 20, height: 1, background: "var(--hero-rule)", display: "inline-block" }} />
+          For Independent Investors
+          <span style={{ width: 20, height: 1, background: "var(--hero-rule)", display: "inline-block" }} />
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <h1 style={{
+          fontFamily: "var(--font-display), serif",
+          fontSize: "clamp(44px, 6.5vw, 82px)",
+          fontWeight: 300, letterSpacing: "-0.04em", lineHeight: 1.05,
+          textAlign: "center", marginBottom: 20, color: "var(--hero-title)",
+          textShadow: "0 2px 24px rgba(0,0,0,0.45)",
+        }}>
+          Research, <em style={{ fontStyle: "italic", fontWeight: 600, color: "var(--hero-title)" }}>before</em> you bet.
+        </h1>
+
+        <p style={{
+          fontFamily: "var(--font-sans), sans-serif",
+          fontSize: 17, fontWeight: 400, color: "var(--hero-desc)",
+          letterSpacing: "0.01em", marginBottom: 44, textAlign: "center",
+          textShadow: "0 1px 12px rgba(0,0,0,0.4)",
+        }}>
+          Turn market noise into signal — then act on it.
+        </p>
+
+        <SearchBox />
+      </section>
+
+      <PredictionsSection />
+
+      {/* Feature cards */}
+      <section style={{ position: "relative", zIndex: 5, padding: "96px 24px 0" }}>
+        <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+          <div style={{
+            fontFamily: "var(--font-mono), monospace", fontSize: 11,
+            letterSpacing: "0.22em", textTransform: "uppercase",
+            color: "var(--gray-500)", marginBottom: 48, textAlign: "center",
+          }}>
+            — What&apos;s coming
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+            {FEATURES.map(f => (
+              <div key={f.num} className="feature-card" style={{
+                background: "white",
+                border: "1px solid rgba(0,0,0,0.07)",
+                borderRadius: 18, padding: "32px 28px",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 4px 8px rgba(0,0,0,0.06), 0 12px 24px rgba(0,0,0,0.07), 0 24px 48px rgba(0,0,0,0.05)",
+              }}>
+                <div style={{
+                  width: 52, height: 52, borderRadius: 14,
+                  background: "var(--gray-100)",
+                  border: "1px solid var(--gray-200)",
+                  display: "grid", placeItems: "center",
+                  color: "var(--gray-500)", marginBottom: 24,
+                }}>
+                  {f.icon}
+                </div>
+                <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "var(--gray-400)", letterSpacing: "0.2em", marginBottom: 10, textTransform: "uppercase" }}>
+                  {f.num} / {f.label}
+                </div>
+                <div style={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 17, fontWeight: 600, color: "var(--gray-900)", marginBottom: 12, letterSpacing: "-0.02em" }}>
+                  {f.title}
+                </div>
+                <div style={{ fontSize: 13, color: "var(--gray-500)", lineHeight: 1.65 }}>
+                  {f.desc}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </main>
+      </section>
+
+      {/* Footer */}
+      <footer style={{
+        position: "relative", zIndex: 5,
+        maxWidth: 1080, margin: "80px auto 0", padding: "32px 24px 48px",
+        borderTop: "1px solid var(--gray-200)",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        fontFamily: "var(--font-mono), monospace", fontSize: 11,
+        color: "var(--gray-400)", letterSpacing: "0.1em",
+      }}>
+        <span>RESEARCH FOR · 2026</span>
+        <span>SEOUL · NEW YORK · TOKYO</span>
+        <span>v0.1 PROTOTYPE</span>
+      </footer>
     </div>
   );
 }
