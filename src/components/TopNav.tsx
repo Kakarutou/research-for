@@ -95,7 +95,7 @@ export default function TopNav() {
           {/* Logo */}
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", flexShrink: 0 }}>
             <RfMark />
-            <div className="nav-logo-text" style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: 4 }}>
+            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: 4 }}>
               <span style={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 23, fontWeight: 800, letterSpacing: "-0.04em", color: "white" }}>
                 Research For
               </span>

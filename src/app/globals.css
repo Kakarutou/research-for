@@ -78,18 +78,24 @@ body {
     grid-template-columns: 1fr !important;
   }
 
+  .nav-bar {
+    flex-wrap: wrap !important;
+    height: auto !important;
+    padding: 10px 16px !important;
+    gap: 8px !important;
+  }
+
   .nav-pill {
-    overflow-x: auto;
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-shrink: 0 !important;
+    overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    max-width: calc(100vw - 120px);
-    flex-shrink: 1;
+    height: 44px !important;
+    border-radius: 10px !important;
   }
   .nav-pill::-webkit-scrollbar { display: none; }
-
-  .nav-logo-text { display: none !important; }
-  .nav-bar { padding: 0 12px !important; gap: 8px !important; }
-  .nav-pill button { min-width: 80px !important; width: 80px !important; font-size: 12px !important; }
 
   .market-row-grid {
     grid-template-columns: 1fr 1fr !important;
