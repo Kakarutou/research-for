@@ -82,9 +82,14 @@ body {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    max-width: calc(100vw - 130px);
+    max-width: calc(100vw - 120px);
+    flex-shrink: 1;
   }
   .nav-pill::-webkit-scrollbar { display: none; }
+
+  .nav-logo-text { display: none !important; }
+  .nav-bar { padding: 0 12px !important; gap: 8px !important; }
+  .nav-pill button { min-width: 80px !important; width: 80px !important; font-size: 12px !important; }
 
   .market-row-grid {
     grid-template-columns: 1fr 1fr !important;

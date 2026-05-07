@@ -138,7 +138,6 @@ export default function Home() {
         color: "var(--gray-400)", letterSpacing: "0.1em",
       }} className="footer-row">
         <span>RESEARCH FOR · 2026</span>
-        <span>SEOUL · NEW YORK · TOKYO</span>
         <span>v0.1 PROTOTYPE</span>
       </footer>
     </div>

@@ -91,11 +91,11 @@ export default function TopNav() {
           padding: "0 28px", height: 80,
           display: "flex", justifyContent: "space-between", alignItems: "center",
           maxWidth: 1080, margin: "0 auto", gap: 12,
-        }}>
+        }} className="nav-bar">
           {/* Logo */}
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", flexShrink: 0 }}>
             <RfMark />
-            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: 4 }}>
+            <div className="nav-logo-text" style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: 4 }}>
               <span style={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 23, fontWeight: 800, letterSpacing: "-0.04em", color: "white" }}>
                 Research For
               </span>
