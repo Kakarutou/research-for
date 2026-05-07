@@ -42,7 +42,7 @@ export async function findByUsername(username: string): Promise<User | null> {
   return db.collection<User>('users').findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
 }
 
-export async function createUser(data: Omit<User, 'id' | 'rfcBalance' | 'createdAt' | 'attendanceDates'>): Promise<User> {
+export async function createUser(data: Omit<User, 'id' | 'rfcBalance' | 'createdAt' | 'attendanceDates' | 'role'>): Promise<User> {
   const db = await getDb();
   const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase();
   const user: User = {
