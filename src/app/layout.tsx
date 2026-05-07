@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Mono, IBM_Plex_Serif } from "next/font/google";
+import { AuthProvider } from "@/contexts/AuthContext";
 import "./globals.css";
 
 const ibmPlexSans = IBM_Plex_Sans({
@@ -26,7 +27,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} ${ibmPlexSerif.variable}`}>
-      <body className="min-h-screen" style={{ fontFamily: "var(--font-sans), sans-serif" }}>{children}</body>
+      <body className="min-h-screen" style={{ fontFamily: "var(--font-sans), sans-serif" }}>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

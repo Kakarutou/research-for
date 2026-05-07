@@ -12,26 +12,6 @@ import MyPageModal from "@/components/MyPageModal";
 import SettingsModal from "@/components/SettingsModal";
 import DisplayModal from "@/components/DisplayModal";
 
-const PB: React.CSSProperties = {
-  width: 104, padding: 0, textAlign: "center",
-  background: "none", border: "none",
-  borderRight: "1px solid rgba(0,0,0,0.06)",
-  cursor: "pointer",
-  fontFamily: "var(--font-sans), sans-serif",
-  fontSize: 14, fontWeight: 500, color: "#52525b",
-  whiteSpace: "nowrap", letterSpacing: "-0.01em",
-  height: "100%", flexShrink: 0,
-};
-
-const PILL: React.CSSProperties = {
-  display: "flex", alignItems: "stretch", height: 48,
-  background: "rgba(255,255,255,0.72)",
-  backdropFilter: "blur(20px)",
-  border: "1px solid rgba(0,0,0,0.09)",
-  borderRadius: 12, overflow: "hidden",
-  boxShadow: "0 1px 6px rgba(0,0,0,0.07)",
-};
-
 function RfMark() {
   return (
     <svg width="42" height="42" viewBox="0 0 36 36" fill="none">
@@ -57,7 +37,15 @@ export default function TopNav() {
   const [showMyPage, setShowMyPage]     = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showDisplay, setShowDisplay]   = useState(false);
+  const [isMobile, setIsMobile]         = useState(false);
   const profileRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     const load = () => { try { setAvatarPhoto(localStorage.getItem("rf_avatar")); } catch {} };
@@ -68,17 +56,41 @@ export default function TopNav() {
 
   const openDropdown = () => {
     const rect = profileRef.current?.getBoundingClientRect();
-    if (rect) {
-      setDropdownPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
-    }
+    if (rect) setDropdownPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
     setDropdown(true);
   };
-
   const closeDropdown = () => { setDropdown(false); setDropdownPos(null); };
+
+  const requireAuth = (action: () => void) => {
+    if (!user) setModal("login");
+    else action();
+  };
+
+  const PB: React.CSSProperties = {
+    width: isMobile ? 88 : 104,
+    padding: 0, textAlign: "center",
+    background: "none", border: "none",
+    borderRight: "1px solid rgba(0,0,0,0.06)",
+    cursor: "pointer",
+    fontFamily: "var(--font-sans), sans-serif",
+    fontSize: isMobile ? 13 : 14, fontWeight: 500, color: "#52525b",
+    whiteSpace: "nowrap", letterSpacing: "-0.01em",
+    height: "100%", flexShrink: 0,
+  };
+
+  const PILL: React.CSSProperties = {
+    display: "flex", alignItems: "stretch",
+    height: isMobile ? 44 : 48,
+    background: "rgba(255,255,255,0.72)",
+    backdropFilter: "blur(20px)",
+    border: "1px solid rgba(0,0,0,0.09)",
+    borderRadius: 12, overflow: isMobile ? "auto" : "hidden",
+    boxShadow: "0 1px 6px rgba(0,0,0,0.07)",
+    ...(isMobile ? { width: "100%", scrollbarWidth: "none" } : {}),
+  };
 
   return (
     <>
-      {/* ── Nav bar ── */}
       <div style={{
         position: "sticky", top: 0, zIndex: 200,
         background: "var(--nav-bg)",
@@ -88,10 +100,13 @@ export default function TopNav() {
         boxShadow: "0 1px 0 var(--nav-shadow)",
       }}>
         <nav style={{
-          padding: "0 28px", height: 80,
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          maxWidth: 1080, margin: "0 auto", gap: 12,
-        }} className="nav-bar">
+          padding: isMobile ? "10px 16px" : "0 28px",
+          height: isMobile ? "auto" : 80,
+          display: "flex",
+          flexDirection: isMobile ? "column" : "row",
+          justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center",
+          maxWidth: 1080, margin: "0 auto", gap: isMobile ? 8 : 12,
+        }}>
           {/* Logo */}
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", flexShrink: 0 }}>
             <RfMark />
@@ -109,19 +124,16 @@ export default function TopNav() {
           {loading ? (
             <div style={{ width: 280, height: 42, background: "rgba(0,0,0,0.05)", borderRadius: 12 }} />
           ) : (
-            <div style={PILL} className="nav-pill">
+            <div style={PILL}>
               <button style={PB} onClick={() => setShowVision(true)}>Vision</button>
               <button style={PB} onClick={() => setShowShop(true)}>RFC Shop</button>
+              <button style={PB} onClick={() => requireAuth(() => setShowMyBets(true))}>My Bets</button>
+              <button style={PB} onClick={() => setShowLeaderboard(true)}>Leaderboard</button>
+              <button style={PB} onClick={() => requireAuth(() => setShowAttendance(true))}>Attendance</button>
 
               {user ? (
                 <>
-                  <button style={PB} onClick={() => setShowMyBets(true)}>My Bets</button>
-                  <button style={PB} onClick={() => setShowLeaderboard(true)}>Leaderboard</button>
-                  <button style={PB} onClick={() => setShowAttendance(true)}>Attendance</button>
-
                   <div style={{ width: 1, background: "rgba(0,0,0,0.06)", margin: "8px 0", flexShrink: 0 }} />
-
-                  {/* Profile button */}
                   <button
                     ref={profileRef}
                     onClick={dropdown ? closeDropdown : openDropdown}
@@ -170,19 +182,13 @@ export default function TopNav() {
         </nav>
       </div>
 
-      {/* ── Dropdown (outside nav stacking context, fixed position) ── */}
+      {/* Dropdown */}
       {dropdown && user && dropdownPos && (
         <div style={{
-          position: "fixed",
-          top: dropdownPos.top,
-          right: dropdownPos.right,
-          background: "white",
-          border: "1px solid #e4e4e7",
-          borderRadius: 12,
-          overflow: "hidden",
-          boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
-          minWidth: 210,
-          zIndex: 1000,
+          position: "fixed", top: dropdownPos.top, right: dropdownPos.right,
+          background: "white", border: "1px solid #e4e4e7", borderRadius: 12,
+          overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.12)",
+          minWidth: 210, zIndex: 1000,
         }}>
           <div style={{ padding: "12px 16px", borderBottom: "1px solid #f4f4f5" }}>
             <div style={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 11, color: "#a1a1aa", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>
@@ -195,21 +201,9 @@ export default function TopNav() {
 
           <div style={{ padding: "4px 0" }}>
             {[
-              {
-                label: "My Page",
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>,
-                action: () => { closeDropdown(); setShowMyPage(true); },
-              },
-              {
-                label: "Settings",
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
-                action: () => { closeDropdown(); setShowSettings(true); },
-              },
-              {
-                label: "Display",
-                icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>,
-                action: () => { closeDropdown(); setShowDisplay(true); },
-              },
+              { label: "My Page", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>, action: () => { closeDropdown(); setShowMyPage(true); } },
+              { label: "Settings", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>, action: () => { closeDropdown(); setShowSettings(true); } },
+              { label: "Display", icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>, action: () => { closeDropdown(); setShowDisplay(true); } },
             ].map(item => (
               <button key={item.label} onClick={item.action} style={{
                 width: "100%", background: "none", border: "none",
@@ -218,8 +212,7 @@ export default function TopNav() {
                 fontSize: 13, fontWeight: 500, color: "#18181b",
                 display: "flex", alignItems: "center", gap: 10,
               }}>
-                {item.icon}
-                {item.label}
+                {item.icon}{item.label}
               </button>
             ))}
           </div>
@@ -246,12 +239,9 @@ export default function TopNav() {
         </div>
       )}
 
-      {/* Backdrop — closes dropdown, zIndex below dropdown (999 < 1000) */}
-      {dropdown && (
-        <div onClick={closeDropdown} style={{ position: "fixed", inset: 0, zIndex: 999 }} />
-      )}
+      {dropdown && <div onClick={closeDropdown} style={{ position: "fixed", inset: 0, zIndex: 999 }} />}
 
-      {/* ── Modals ── */}
+      {/* Modals */}
       {modal && <AuthModal initialTab={modal} onClose={() => setModal(null)} />}
       {showAttendance && user && (
         <AttendanceCalendar
