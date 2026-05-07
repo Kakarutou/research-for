@@ -96,7 +96,7 @@ export default function Home() {
             — What&apos;s coming
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+          <div className="feature-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
             {FEATURES.map(f => (
               <div key={f.num} className="feature-card" style={{
                 background: "white",
@@ -136,7 +136,7 @@ export default function Home() {
         display: "flex", justifyContent: "space-between", alignItems: "center",
         fontFamily: "var(--font-mono), monospace", fontSize: 11,
         color: "var(--gray-400)", letterSpacing: "0.1em",
-      }}>
+      }} className="footer-row">
         <span>RESEARCH FOR · 2026</span>
         <span>SEOUL · NEW YORK · TOKYO</span>
         <span>v0.1 PROTOTYPE</span>

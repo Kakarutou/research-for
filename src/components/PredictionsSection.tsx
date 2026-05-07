@@ -168,10 +168,10 @@ export default function PredictionsSection() {
             opacity: isLocked ? 0.62 : 1,
             transition: "opacity 0.2s",
           }}>
-            <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr 1fr", alignItems: "center", gap: 12, marginBottom: 10 }}>
+            <div className="market-row-grid" style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr 1fr", alignItems: "center", gap: 12, marginBottom: 10 }}>
 
               {/* Market info */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div className="market-info-cell" style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 {(() => {
                   const mi = MARKET_IMG[m.id];
                   if (!mi) return null;
@@ -198,7 +198,7 @@ export default function PredictionsSection() {
               </div>
 
               {/* Price */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="market-price-cell" style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 14, fontWeight: 600, color: "var(--gray-900)" }}>{price}</span>
                 <span style={{
                   fontFamily: "var(--font-mono), monospace", fontSize: 11, fontWeight: 600,
@@ -208,24 +208,28 @@ export default function PredictionsSection() {
                 }}>{change}</span>
               </div>
 
-              <BetButton
-                side="long"
-                pool={m.longPool}
-                disabled={isLocked || submitting || !betOpen}
-                myPick={myBetOnThis === "long"}
-                confirming={isConfirmingLong}
-                onClick={e => { e.stopPropagation(); handleBetClick(m.id, "long"); }}
-                notLoggedIn={!user}
-              />
-              <BetButton
-                side="short"
-                pool={m.shortPool}
-                disabled={isLocked || submitting || !betOpen}
-                myPick={myBetOnThis === "short"}
-                confirming={isConfirmingShort}
-                onClick={e => { e.stopPropagation(); handleBetClick(m.id, "short"); }}
-                notLoggedIn={!user}
-              />
+              <div className="market-long-cell">
+                <BetButton
+                  side="long"
+                  pool={m.longPool}
+                  disabled={isLocked || submitting || !betOpen}
+                  myPick={myBetOnThis === "long"}
+                  confirming={isConfirmingLong}
+                  onClick={e => { e.stopPropagation(); handleBetClick(m.id, "long"); }}
+                  notLoggedIn={!user}
+                />
+              </div>
+              <div className="market-short-cell">
+                <BetButton
+                  side="short"
+                  pool={m.shortPool}
+                  disabled={isLocked || submitting || !betOpen}
+                  myPick={myBetOnThis === "short"}
+                  confirming={isConfirmingShort}
+                  onClick={e => { e.stopPropagation(); handleBetClick(m.id, "short"); }}
+                  notLoggedIn={!user}
+                />
+              </div>
             </div>
 
             {/* Bottom bar */}
@@ -243,23 +247,23 @@ export default function PredictionsSection() {
               <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, fontWeight: 700, color: "var(--down)", whiteSpace: "nowrap", width: 44, flexShrink: 0, textAlign: "right" }}>
                 {100 - longPct}% ▼
               </span>
-              <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "var(--gray-400)", whiteSpace: "nowrap", width: 64, flexShrink: 0 }}>
+              <span className="bottom-bar-votes" style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "var(--gray-400)", whiteSpace: "nowrap", width: 64, flexShrink: 0 }}>
                 {(PARTICIPANTS[m.id] ?? 0).toLocaleString()} votes
               </span>
 
               {/* Spacer */}
-              <div style={{ flex: "0 0 1px", background: "var(--gray-200)", height: 12, margin: "0 4px", flexShrink: 0 }} />
+              <div className="bottom-bar-divider" style={{ flex: "0 0 1px", background: "var(--gray-200)", height: 12, margin: "0 4px", flexShrink: 0 }} />
 
               {/* Betting window status — fixed width so bar length is consistent */}
               {betOpen ? (
-                <span style={{
+                <span className="bottom-bar-status" style={{
                   fontFamily: "var(--font-mono), monospace", fontSize: 10, fontWeight: 600,
                   color: "#16a34a", whiteSpace: "nowrap", width: 180, flexShrink: 0, textAlign: "right",
                 }}>
                   Open · closes {schedule.closeLabel}{countdown ? ` (${countdown})` : ""}
                 </span>
               ) : (
-                <span style={{
+                <span className="bottom-bar-status" style={{
                   fontFamily: "var(--font-mono), monospace", fontSize: 10, fontWeight: 600,
                   color: "#a1a1aa", whiteSpace: "nowrap", width: 180, flexShrink: 0, textAlign: "right",
                 }}>

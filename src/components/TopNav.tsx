@@ -109,7 +109,7 @@ export default function TopNav() {
           {loading ? (
             <div style={{ width: 280, height: 42, background: "rgba(0,0,0,0.05)", borderRadius: 12 }} />
           ) : (
-            <div style={PILL}>
+            <div style={PILL} className="nav-pill">
               <button style={PB} onClick={() => setShowVision(true)}>Vision</button>
               <button style={PB} onClick={() => setShowShop(true)}>RFC Shop</button>
 
