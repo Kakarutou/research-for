@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   createChart, CandlestickSeries, AreaSeries, HistogramSeries,
-  type IChartApi, type ISeriesApi, type UTCTimestamp,
+  type IChartApi, type ISeriesApi, type UTCTimestamp, type TickMarkType,
 } from "lightweight-charts";
 import type { ChartPoint, ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
 
@@ -30,11 +30,51 @@ const DAY_TFS = [
 
 const MINUTE_SET = new Set(MINUTE_TFS.map(t => t.tf));
 
+function padZ(n: number) { return n.toString().padStart(2, "0"); }
+
+function makeTickFormatter(isIntraday: boolean, utcOffset: number) {
+  return (time: UTCTimestamp, _type: TickMarkType, _locale: string): string => {
+    const ms  = (time + utcOffset) * 1000;
+    const d   = new Date(ms);
+    const yr  = d.getUTCFullYear();
+    const mo  = d.getUTCMonth() + 1;
+    const day = d.getUTCDate();
+    const hh  = d.getUTCHours();
+    const mm  = d.getUTCMinutes();
+    if (isIntraday) return `${padZ(hh)}:${padZ(mm)}`;
+    return `${mo}/${day}`;
+  };
+}
+
+// iOS-style toggle switch component
+function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <div style={{ userSelect: "none", cursor: "pointer" }} onClick={onToggle}>
+      <div style={{
+        width: 44, height: 24, borderRadius: 12, position: "relative",
+        background: on ? "#18181b" : "#d4d4d8",
+        transition: "background 0.2s",
+        flexShrink: 0,
+      }}>
+        <div style={{
+          position: "absolute", width: 18, height: 18, borderRadius: "50%",
+          background: "#fff", top: 3,
+          left: on ? 23 : 3,
+          transition: "left 0.2s",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+        }} />
+      </div>
+    </div>
+  );
+}
+
 export default function StockChart({ ticker, initialIsUp }: { ticker: string; initialIsUp?: boolean }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef     = useRef<IChartApi | null>(null);
-  const mainRef      = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
-  const volRef       = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const priceRef  = useRef<HTMLDivElement>(null);
+  const volRef_el = useRef<HTMLDivElement>(null);
+  const priceChart = useRef<IChartApi | null>(null);
+  const volChart   = useRef<IChartApi | null>(null);
+  const mainSeries = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
+  const volSeries  = useRef<ISeriesApi<"Histogram"> | null>(null);
 
   const [chartType, setChartType]   = useState<"candle" | "line">("candle");
   const [tf, setTf]                 = useState("1d");
@@ -48,9 +88,9 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
     setUnavail(false);
     try {
       const res  = await fetch(`/api/stock/${encodeURIComponent(ticker)}/chart?tf=${tf}`, { cache: "no-store" });
-      const json = await res.json();
-      if (json?.error === 'intraday_unavailable') { setUnavail(true); return; }
-      if (json?.data?.length) { setResult(json); setLastUpdated(new Date()); }
+      const json: ChartResponse & { error?: string } | null = await res.json();
+      if (json?.error === "intraday_unavailable") { setUnavail(true); return; }
+      if (json?.data?.length) { setResult(json as ChartResponse); setLastUpdated(new Date()); }
     } finally {
       setLoading(false);
     }
@@ -63,51 +103,71 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
     return () => clearInterval(id);
   }, [fetchData]);
 
-  const isUp  = result ? result.changePct >= 0 : (initialIsUp ?? true);
-  const color = isUp ? UP : DOWN;
+  const isUp   = result ? result.changePct >= 0 : (initialIsUp ?? true);
+  const color  = isUp ? UP : DOWN;
+  const isIntraday  = MINUTE_SET.has(tf);
+  const utcOffset   = result?.utcOffset ?? -14400;
 
-  // Create chart once on mount
+  // Create price chart
   useEffect(() => {
-    if (!containerRef.current) return;
-    const chart = createChart(containerRef.current, {
+    if (!priceRef.current) return;
+    const chart = createChart(priceRef.current, {
       layout:    { background: { color: "transparent" }, textColor: "#71717a", fontFamily: "monospace", fontSize: 11 },
       grid:      { vertLines: { color: "#e4e4e7" }, horzLines: { color: "#e4e4e7" } },
       rightPriceScale: { borderColor: "#e4e4e7" },
-      timeScale: { borderColor: "#e4e4e7", timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: "#e4e4e7", timeVisible: isIntraday, secondsVisible: false },
       crosshair: { mode: 1 },
-      width:  containerRef.current.clientWidth,
-      height: 320,
+      width:  priceRef.current.clientWidth,
+      height: 260,
     });
-    chartRef.current = chart;
-
-    const vol = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol" });
-    vol.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
-    volRef.current = vol;
-
+    priceChart.current = chart;
     const ro = new ResizeObserver(() => {
-      if (containerRef.current) chart.resize(containerRef.current.clientWidth, 320);
+      if (priceRef.current) chart.resize(priceRef.current.clientWidth, 260);
     });
-    ro.observe(containerRef.current);
-
-    return () => { ro.disconnect(); chart.remove(); chartRef.current = null; };
+    ro.observe(priceRef.current);
+    return () => { ro.disconnect(); chart.remove(); priceChart.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update time axis visibility per timeframe
+  // Create volume chart
   useEffect(() => {
-    chartRef.current?.applyOptions({
-      timeScale: { timeVisible: MINUTE_SET.has(tf), secondsVisible: false },
+    if (!volRef_el.current) return;
+    const chart = createChart(volRef_el.current, {
+      layout:    { background: { color: "transparent" }, textColor: "#71717a", fontFamily: "monospace", fontSize: 10 },
+      grid:      { vertLines: { color: "#e4e4e7" }, horzLines: { color: "transparent" } },
+      rightPriceScale: { borderColor: "#e4e4e7", scaleMargins: { top: 0.1, bottom: 0 } },
+      timeScale: { borderColor: "#e4e4e7", visible: false },
+      crosshair: { mode: 1 },
+      width:  volRef_el.current.clientWidth,
+      height: 70,
     });
-  }, [tf]);
+    const s = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" } });
+    volChart.current  = chart;
+    volSeries.current = s;
+    const ro = new ResizeObserver(() => {
+      if (volRef_el.current) chart.resize(volRef_el.current.clientWidth, 70);
+    });
+    ro.observe(volRef_el.current);
+    return () => { ro.disconnect(); chart.remove(); volChart.current = null; volSeries.current = null; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Rebuild main series when chartType or data changes
+  // Sync time axis + formatter when tf changes
   useEffect(() => {
-    const chart = chartRef.current;
+    const fmt = makeTickFormatter(isIntraday, utcOffset);
+    priceChart.current?.applyOptions({
+      timeScale: { timeVisible: isIntraday, secondsVisible: false, tickMarkFormatter: fmt },
+    });
+  }, [isIntraday, utcOffset]);
+
+  // Rebuild price series when chartType or data changes
+  useEffect(() => {
+    const chart = priceChart.current;
     if (!chart || !result?.data?.length) return;
 
-    if (mainRef.current) { chart.removeSeries(mainRef.current); mainRef.current = null; }
+    if (mainSeries.current) { chart.removeSeries(mainSeries.current); mainSeries.current = null; }
 
-    const data: ChartPoint[] = result.data;
-
+    const data = result.data;
     if (chartType === "candle") {
       const s = chart.addSeries(CandlestickSeries, {
         upColor: UP, downColor: DOWN,
@@ -115,30 +175,33 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
         wickUpColor: UP, wickDownColor: DOWN,
       });
       s.setData(data.map(d => ({ time: d.time as UTCTimestamp, open: d.open, high: d.high, low: d.low, close: d.close })));
-      mainRef.current = s;
+      mainSeries.current = s;
     } else {
       const s = chart.addSeries(AreaSeries, {
         lineColor: color,
         topColor:    isUp ? "rgba(22,163,74,0.18)" : "rgba(220,38,38,0.18)",
         bottomColor: "rgba(0,0,0,0)",
-        lineWidth: 2,
+        lineWidth:   2,
       });
       s.setData(data.map(d => ({ time: d.time as UTCTimestamp, value: d.close })));
-      mainRef.current = s;
+      mainSeries.current = s;
     }
-
-    volRef.current?.setData(data.map(d => ({
-      time: d.time as UTCTimestamp, value: d.volume,
-      color: d.close >= d.open ? "rgba(22,163,74,0.4)" : "rgba(220,38,38,0.4)",
-    })));
-
     chart.timeScale().fitContent();
+
+    // Volume
+    volSeries.current?.setData(data.map(d => ({
+      time: d.time as UTCTimestamp, value: d.volume,
+      color: d.close >= d.open ? "rgba(22,163,74,0.5)" : "rgba(220,38,38,0.5)",
+    })));
+    volChart.current?.timeScale().fitContent();
   }, [chartType, result, color, isUp]);
 
-  // Close dropdown when clicking outside
+  // Close dropdown on outside click
   useEffect(() => {
     if (!dropOpen) return;
-    const close = () => setDropOpen(false);
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element)?.closest?.("[data-dropdown]")) setDropOpen(false);
+    };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [dropOpen]);
@@ -154,12 +217,9 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
     <div>
       {/* Controls */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
-
-        {/* Left: 분봉 dropdown + 일/주/월/년 buttons */}
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
-
           {/* 분봉 dropdown */}
-          <div style={{ position: "relative" }} onMouseDown={e => e.stopPropagation()}>
+          <div style={{ position: "relative" }} data-dropdown>
             <button
               onClick={() => setDropOpen(o => !o)}
               style={{
@@ -172,7 +232,6 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
               {activeTfLabel ?? "분봉"}
               <span style={{ fontSize: 9, opacity: 0.7 }}>▼</span>
             </button>
-
             {dropOpen && (
               <div style={{
                 position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 50,
@@ -195,7 +254,6 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
             )}
           </div>
 
-          {/* 일/주/월/년 buttons */}
           {DAY_TFS.map(t => (
             <button key={t.tf} onClick={() => setTf(t.tf)} style={{
               ...btnBase,
@@ -207,40 +265,37 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
           ))}
         </div>
 
-        {/* Right: candle / line toggle (single button) */}
-        <button onClick={() => setChartType(t => t === "candle" ? "line" : "candle")} style={{
-          ...btnBase,
-          background: "var(--gray-100)", color: "var(--gray-700)",
-          border: "1px solid var(--gray-200)",
-          minWidth: 68,
-        }}>
-          {chartType === "candle" ? "캔들" : "라인"}
-        </button>
+        {/* 캔들/라인 iOS toggle */}
+        <ToggleSwitch
+          on={chartType === "candle"}
+          onToggle={() => setChartType(t => t === "candle" ? "line" : "candle")}
+        />
       </div>
 
-      {/* Chart */}
-      <div style={{ position: "relative" }}>
-        <div ref={containerRef} style={{ width: "100%", height: 320, borderRadius: 8, overflow: "hidden" }} />
+      {/* Charts */}
+      <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--gray-200)" }}>
+        {/* Price chart */}
+        <div ref={priceRef} style={{ width: "100%" }} />
 
-        {loading && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.65)", borderRadius: 8 }}>
-            <div style={{ width: 22, height: 22, border: `2px solid ${color}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
-          </div>
-        )}
+        {/* Separator */}
+        <div style={{ height: 1, background: "var(--gray-200)", margin: "0" }} />
 
-        {unavail && !loading && (
-          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.85)", borderRadius: 8 }}>
-            <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--gray-500)" }}>
-              분봉 데이터는 한국 주식에서 지원하지 않습니다
-            </span>
+        {/* Volume chart */}
+        <div ref={volRef_el} style={{ width: "100%" }} />
+
+        {(loading || unavail) && (
+          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.75)", borderRadius: 8 }}>
+            {loading
+              ? <div style={{ width: 22, height: 22, border: `2px solid ${color}`, borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              : <span style={{ fontFamily: "monospace", fontSize: 13, color: "var(--gray-500)" }}>분봉은 한국 주식에서 지원되지 않습니다</span>
+            }
           </div>
         )}
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
         <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--gray-400)" }}>
-          15min delay
-          {lastUpdated && ` · ${lastUpdated.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 기준`}
+          15min delay{lastUpdated && ` · ${lastUpdated.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })} 기준`}
         </span>
       </div>
     </div>

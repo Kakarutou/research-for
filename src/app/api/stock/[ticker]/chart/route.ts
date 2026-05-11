@@ -39,6 +39,7 @@ export interface ChartResponse {
   name: string; symbol: string;
   isAfterHours?: boolean; regularPrice?: number;
   isIntraday: boolean;
+  utcOffset: number; // seconds (e.g. -14400 for ET, 32400 for KST)
 }
 
 function aggregateMin(data: ChartPoint[], minutes: number): ChartPoint[] {
@@ -135,6 +136,7 @@ async function fetchNaverChart(code: string, tf: string): Promise<ChartResponse 
     isAfterHours: overPrice > 0,
     regularPrice: overPrice > 0 ? regularPrice : undefined,
     isIntraday: false,
+    utcOffset: 32400, // KST = UTC+9
   };
 }
 
@@ -181,11 +183,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ tick
     }
 
     const isIntraday = !['1d', '1w', '1mo', '1y'].includes(tf);
+    const utcOffset: number = meta.gmtoffset ?? -14400; // default ET
     return NextResponse.json({
       data, price, changePct, changeAmt,
       name: (meta.shortName || meta.longName || ticker.toUpperCase()) as string,
       symbol: ticker.toUpperCase(),
       isIntraday,
+      utcOffset,
     } satisfies ChartResponse);
   } catch {
     return NextResponse.json(null);
