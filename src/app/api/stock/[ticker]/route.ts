@@ -5,10 +5,67 @@ export interface StockInfo {
   name: string;
   price: number;
   changePct: number;
+  changeAmt?: number;
+  isAfterHours?: boolean;
+  regularPrice?: number;
+}
+
+function parseKoreanCode(ticker: string): string | null {
+  const m = ticker.match(/^(\d{6})\.(KS|KQ)$/i);
+  if (m) return m[1];
+  if (/^\d{6}$/.test(ticker)) return ticker;
+  return null;
+}
+
+const NAVER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36',
+  'Accept': 'application/json',
+  'Referer': 'https://m.stock.naver.com/',
+};
+
+async function fetchNaverInfo(code: string): Promise<StockInfo | null> {
+  const res = await fetch(`https://m.stock.naver.com/api/stock/${code}/basic`, {
+    headers: NAVER_HEADERS,
+    cache: 'no-store',
+  });
+  if (!res.ok) return null;
+  const d = await res.json();
+
+  const name: string = d.stockName;
+  const sign = (field: { name?: string } | undefined) => field?.name === 'FALLING' ? -1 : 1;
+
+  const regularPrice = Number(String(d.closePrice).replace(/,/g, ''));
+  const regularChangePct = parseFloat(d.fluctuationsRatio) * sign(d.compareToPreviousPrice);
+  const regularChangeAmt = Number(String(d.compareToPreviousClosePrice).replace(/,/g, '')) * sign(d.compareToPreviousPrice);
+
+  const over = d.overMarketPriceInfo;
+  const overPrice = over?.overPrice ? Number(String(over.overPrice).replace(/,/g, '')) : 0;
+
+  if (overPrice > 0) {
+    return {
+      symbol: code,
+      name,
+      price: overPrice,
+      changePct: parseFloat(over.fluctuationsRatio) * sign(over.compareToPreviousPrice),
+      changeAmt: Number(String(over.compareToPreviousClosePrice).replace(/,/g, '')) * sign(over.compareToPreviousPrice),
+      isAfterHours: true,
+      regularPrice,
+    };
+  }
+
+  return { symbol: code, name, price: regularPrice, changePct: regularChangePct, changeAmt: regularChangeAmt, isAfterHours: false };
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
+
+  const krCode = parseKoreanCode(ticker);
+  if (krCode) {
+    const info = await fetchNaverInfo(krCode).catch(() => null);
+    return NextResponse.json(info);
+  }
+
+  // Yahoo Finance for US stocks / crypto
   try {
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=2d`,
@@ -22,14 +79,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
     const meta = result.meta;
     const name: string = meta.shortName || meta.longName || ticker.toUpperCase();
     const price: number = meta.regularMarketPrice;
-
-    let changePct: number = meta.regularMarketChangePercent ?? null;
-    if (changePct == null) {
-      const closes: (number | null)[] = result.indicators.quote[0].close ?? [];
-      const valid = closes.filter((c): c is number => c != null);
-      if (valid.length >= 2) changePct = ((price - valid[valid.length - 2]) / valid[valid.length - 2]) * 100;
-      else if (valid.length === 1) changePct = ((price - valid[0]) / valid[0]) * 100;
-      else changePct = 0;
+    let changePct: number = meta.regularMarketChangePercent ?? 0;
+    if (!changePct) {
+      const closes = (result.indicators.quote[0].close ?? []).filter((c: number | null): c is number => c != null);
+      if (closes.length >= 2) changePct = ((price - closes[closes.length - 2]) / closes[closes.length - 2]) * 100;
     }
 
     return NextResponse.json({ symbol: ticker.toUpperCase(), name, price, changePct } satisfies StockInfo);

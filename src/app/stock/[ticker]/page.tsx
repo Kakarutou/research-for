@@ -92,18 +92,32 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
                 </div>
                 {price != null && (
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 32, fontWeight: 700, color: "var(--gray-900)", letterSpacing: "-0.02em" }}>
-                      {price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", marginBottom: 4 }}>
+                      {liveInfo?.isAfterHours && (
+                        <span style={{
+                          fontFamily: "var(--font-mono), monospace", fontSize: 11, fontWeight: 700,
+                          padding: "2px 8px", borderRadius: 4,
+                          background: "rgba(124,58,237,0.1)", color: "#7c3aed", letterSpacing: "0.05em",
+                        }}>시간외</span>
+                      )}
+                      <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 32, fontWeight: 700, color: "var(--gray-900)", letterSpacing: "-0.02em" }}>
+                        {price.toLocaleString(undefined, { minimumFractionDigits: price < 100 ? 2 : 0, maximumFractionDigits: price < 100 ? 2 : 0 })}
+                      </div>
                     </div>
                     {changePct != null && (
                       <span style={{
                         fontFamily: "var(--font-mono), monospace", fontSize: 14, fontWeight: 600,
-                        padding: "3px 10px", borderRadius: 6, marginTop: 6, display: "inline-block",
+                        padding: "3px 10px", borderRadius: 6, display: "inline-block",
                         color: isUp ? "var(--up)" : "var(--down)",
                         background: isUp ? "var(--up-bg)" : "var(--down-bg)",
                       }}>
                         {isUp ? "+" : ""}{changePct.toFixed(2)}%
                       </span>
+                    )}
+                    {liveInfo?.isAfterHours && liveInfo.regularPrice != null && (
+                      <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: "var(--gray-400)", marginTop: 4 }}>
+                        정규장 {liveInfo.regularPrice.toLocaleString()}
+                      </div>
                     )}
                   </div>
                 )}
