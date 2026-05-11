@@ -63,7 +63,7 @@ export default function NewsCard({ news }: { news: NewsItem[] }) {
               key={t}
               onClick={() => { setTab(t); setExpanded(false); }}
               style={{
-                flex: 1,
+                flex: 1, position: "relative",
                 background: active ? "#18181b" : "none",
                 border: "none",
                 borderRight: idx < TABS.length - 1 ? "1px solid rgba(0,0,0,0.06)" : "none",
@@ -74,17 +74,17 @@ export default function NewsCard({ news }: { news: NewsItem[] }) {
                 letterSpacing: "-0.01em",
                 whiteSpace: "nowrap",
                 transition: "background 0.12s, color 0.12s",
-                display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center", gap: 3,
+                display: "flex", alignItems: "center", justifyContent: "center",
               }}
             >
               {t}
               {isNew && (
                 <span style={{
-                  fontSize: 9, fontWeight: 800, letterSpacing: "0.05em", lineHeight: 1,
-                  background: active ? "rgba(245,158,11,0.35)" : "#f59e0b",
-                  color: active ? "#fcd34d" : "white",
-                  borderRadius: 3, padding: "2px 5px",
+                  position: "absolute", top: 4, right: 5,
+                  fontSize: 8, fontWeight: 800, letterSpacing: "0.05em", lineHeight: 1,
+                  background: active ? "rgba(245,158,11,0.4)" : "#f59e0b",
+                  color: active ? "#fde68a" : "white",
+                  borderRadius: 3, padding: "2px 4px",
                 }}>
                   NEW
                 </span>
@@ -125,24 +125,23 @@ export default function NewsCard({ news }: { news: NewsItem[] }) {
         {/* Gradient fade + more button */}
         {!expanded && hasMore && (
           <div style={{
-            position: "absolute", bottom: 0, left: 0, right: 0, height: 80,
-            background: "linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.97))",
+            position: "absolute", bottom: 0, left: 0, right: 0, height: 88,
+            background: "linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.98) 55%)",
             display: "flex", alignItems: "flex-end", justifyContent: "center",
-            paddingBottom: 8,
+            paddingBottom: 6,
             pointerEvents: "none",
           }}>
             <button
               onClick={() => setExpanded(true)}
               style={{
                 pointerEvents: "auto",
-                fontFamily: "var(--font-sans), sans-serif", fontSize: 12, fontWeight: 500,
-                padding: "5px 22px", borderRadius: 20, cursor: "pointer",
-                border: "1px solid rgba(0,0,0,0.08)",
-                background: "rgba(255,255,255,0.55)",
-                backdropFilter: "blur(6px)",
-                color: "#71717a",
-                opacity: 0.85,
-                transition: "opacity 0.15s",
+                fontFamily: "var(--font-sans), sans-serif", fontSize: 13, fontWeight: 600,
+                padding: "6px 24px", borderRadius: 20, cursor: "pointer",
+                border: "1.5px solid rgba(0,0,0,0.18)",
+                background: "rgba(255,255,255,0.9)",
+                backdropFilter: "blur(8px)",
+                color: "#27272a",
+                boxShadow: "0 1px 6px rgba(0,0,0,0.08)",
                 letterSpacing: "-0.01em",
               }}
             >

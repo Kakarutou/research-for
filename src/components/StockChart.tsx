@@ -67,7 +67,7 @@ function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
-const CHART_H = 340;
+const CHART_H = 226;
 
 export default function StockChart({ ticker, initialIsUp }: { ticker: string; initialIsUp?: boolean }) {
   const chartRef   = useRef<HTMLDivElement>(null);
