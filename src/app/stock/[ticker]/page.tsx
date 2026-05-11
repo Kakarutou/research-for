@@ -141,18 +141,17 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
               </div>
             </div>
 
+            {/* Chart — full width, same as header */}
+            <div style={card}>
+              <div style={sectionTitle}>
+                Price & Volume
+              </div>
+              <StockChart ticker={ticker.toUpperCase()} initialIsUp={isUp} />
+            </div>
+
             {/* Main layout */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "start" }}>
               <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-
-                {/* Chart — self-contained client component */}
-                <div style={card}>
-                  <div style={sectionTitle}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: isUp ? "var(--up)" : "var(--down)", display: "inline-block" }} />
-                    Price & Volume
-                  </div>
-                  <StockChart ticker={ticker.toUpperCase()} initialIsUp={isUp} />
-                </div>
 
                 {mockData && (
                   <>

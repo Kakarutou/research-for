@@ -1,31 +1,49 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { MARKETS } from "@/lib/mockData";
 import type { MarketItem } from "@/app/api/market/live/route";
+import type { MarketStats, StatsResponse } from "@/app/api/bets/stats/route";
 import { useAuth } from "@/hooks/useAuth";
 import { isBettingOpen, minsUntilClose, formatCountdown, SCHEDULES } from "@/lib/marketSchedule";
+
+const MARKETS = [
+  { id: "NASDAQ", name: "Nasdaq Composite" },
+  { id: "KOSPI",  name: "Korea Composite" },
+  { id: "N225",   name: "Nikkei 225" },
+  { id: "HSI",    name: "Hang Seng Index" },
+  { id: "DAX",    name: "DAX" },
+  { id: "BTC",    name: "Bitcoin" },
+];
 
 const MARKET_IMG: Record<string, { src: string; w: number; h: number; bg: string; radius: number }> = {
   NASDAQ: { src: "/nasdaq.svg", w: 42, h: 26, bg: "#3c3b6e", radius: 6 },
   KOSPI:  { src: "/kospi.svg",  w: 42, h: 26, bg: "#fff",    radius: 6 },
   N225:   { src: "/nikkei.svg", w: 42, h: 26, bg: "#fff",    radius: 6 },
+  HSI:    { src: "/hsi.svg",    w: 42, h: 26, bg: "#DE2910",  radius: 6 },
+  DAX:    { src: "/dax.svg",    w: 42, h: 26, bg: "#000",     radius: 6 },
   BTC:    { src: "/btc.png",    w: 30, h: 30, bg: "#f7931a", radius: 15 },
 };
 
-const PARTICIPANTS: Record<string, number> = {
-  NASDAQ: 2841, KOSPI: 1204, N225: 876, BTC: 5392,
-};
+function fmtRFC(amount: number): string {
+  if (amount === 0) return "−";
+  return amount.toLocaleString("en-US");
+}
+
+const EMPTY_STATS: MarketStats = { longCount: 0, shortCount: 0, longRFC: 0, shortRFC: 0 };
 
 interface UserBet {
   date: string;
   market: string;
   side: "long" | "short";
   amount: number;
+  settled?: boolean;
+  won?: boolean;
+  payout?: number;
 }
 
 export default function PredictionsSection() {
   const { user, updateRfcBalance } = useAuth();
   const [liveData, setLiveData] = useState<Record<string, MarketItem>>({});
+  const [betStats, setBetStats] = useState<StatsResponse | null>(null);
   const [userBet, setUserBet] = useState<UserBet | null>(null);
   const [confirming, setConfirming] = useState<{ market: string; side: "long" | "short" } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -53,6 +71,19 @@ export default function PredictionsSection() {
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch real-time bet stats (long/short counts & RFC pools)
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const res = await fetch("/api/bets/stats");
+        if (res.ok) setBetStats(await res.json());
+      } catch {}
+    };
+    loadStats();
+    const t = setInterval(loadStats, 30_000); // refresh every 30s
+    return () => clearInterval(t);
+  }, []);
+
   const loadBet = useCallback(async () => {
     if (!user) return;
     const token = localStorage.getItem("rf_token") ?? "";
@@ -62,13 +93,19 @@ export default function PredictionsSection() {
     if (res.ok) {
       const data = await res.json();
       setUserBet(data.bet);
+      if (data.rfcBalance !== undefined) updateRfcBalance(data.rfcBalance);
     }
-  }, [user]);
+  }, [user, updateRfcBalance]);
 
-  useEffect(() => { loadBet(); }, [loadBet]);
+  // Poll every 5 min so settlement triggers automatically after market close
+  useEffect(() => {
+    loadBet();
+    const t = setInterval(loadBet, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [loadBet]);
 
   const handleBetClick = (market: string, side: "long" | "short") => {
-    if (!user || userBet || !isBettingOpen(market)) return;
+    if (!user || hasBet || !isBettingOpen(market)) return;
     if (confirming?.market === market && confirming?.side === side) {
       submitBet(market, side);
     } else {
@@ -99,8 +136,9 @@ export default function PredictionsSection() {
   // suppress unused warning — `now` triggers re-render for countdown
   void now;
 
-  const totalParticipants = Object.values(PARTICIPANTS).reduce((a, b) => a + b, 0);
-  const hasBet = !!userBet;
+  const totalUsers = betStats?.totalUsers ?? 0;
+  // Only block new betting while there is an UNSETTLED (active) bet
+  const hasBet = !!userBet && !userBet.settled;
 
   return (
     <section
@@ -111,11 +149,6 @@ export default function PredictionsSection() {
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{
-              width: 7, height: 7, background: "var(--up)", borderRadius: "50%",
-              boxShadow: "0 0 8px var(--up)", display: "inline-block",
-              animation: "pulse-dot 1.6s infinite",
-            }} />
-            <span style={{
               fontFamily: "var(--font-sans), sans-serif",
               fontSize: 15, fontWeight: 700, color: "var(--gray-900)", letterSpacing: "-0.02em",
             }}>Today&apos;s Predictions</span>
@@ -125,11 +158,11 @@ export default function PredictionsSection() {
             background: "var(--gray-100)", color: "var(--gray-600)",
             padding: "3px 10px", borderRadius: 20, letterSpacing: "0.04em",
           }}>
-            {totalParticipants.toLocaleString()} active today
+            {totalUsers > 0 ? `${totalUsers.toLocaleString()} active today` : "Be the first today"}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {user && hasBet && (
+          {user && hasBet && !userBet.settled && (
             <span style={{
               fontFamily: "var(--font-sans), sans-serif", fontSize: 11, fontWeight: 600,
               color: "#16a34a", background: "#f0fdf4",
@@ -138,20 +171,34 @@ export default function PredictionsSection() {
               Voted · {userBet.market} {userBet.side === "long" ? "Long" : "Short"}
             </span>
           )}
+          {user && hasBet && userBet.settled && (
+            <span style={{
+              fontFamily: "var(--font-sans), sans-serif", fontSize: 11, fontWeight: 600,
+              color: userBet.won ? "#16a34a" : "#dc2626",
+              background: userBet.won ? "#f0fdf4" : "#fef2f2",
+              border: `1px solid ${userBet.won ? "#bbf7d0" : "#fecaca"}`,
+              borderRadius: 6, padding: "3px 10px",
+            }}>
+              {userBet.won
+                ? `Win · +${(userBet.payout ?? 0) - userBet.amount} RFC`
+                : `Lose · ${userBet.market} ${userBet.side === "long" ? "Long" : "Short"}`}
+            </span>
+          )}
         </div>
       </div>
 
       {MARKETS.map(m => {
         const live = liveData[m.id];
-        const price  = live ? live.price  : m.price;
-        const change = live ? live.change : m.change;
-        const isUp   = live ? live.isUp   : m.isUp;
+        const price  = live?.price  ?? "−";
+        const change = live?.change ?? "−";
+        const isUp   = live?.isUp   ?? true;
 
-        const longN   = Number(m.longPool.replace(",", ""));
-        const shortN  = Number(m.shortPool.replace(",", ""));
-        const longPct = Math.round((longN / (longN + shortN)) * 100);
+        const stats = betStats?.[m.id] ?? EMPTY_STATS;
+        const total = stats.longCount + stats.shortCount;
+        const longPct = total > 0 ? Math.round((stats.longCount / total) * 100) : 50;
 
-        const myBetOnThis = userBet?.market === m.id ? userBet.side : null;
+        // Only show "My pick" for active (unsettled) bets
+        const myBetOnThis = (userBet && !userBet.settled && userBet.market === m.id) ? userBet.side : null;
         const betOpen = isBettingOpen(m.id);
         const isLocked = hasBet && !myBetOnThis;
         const isConfirmingLong  = confirming?.market === m.id && confirming?.side === "long";
@@ -211,7 +258,8 @@ export default function PredictionsSection() {
               <div className="market-long-cell">
                 <BetButton
                   side="long"
-                  pool={m.longPool}
+                  rfc={stats.longRFC}
+                  count={stats.longCount}
                   disabled={isLocked || submitting || !betOpen}
                   myPick={myBetOnThis === "long"}
                   confirming={isConfirmingLong}
@@ -222,7 +270,8 @@ export default function PredictionsSection() {
               <div className="market-short-cell">
                 <BetButton
                   side="short"
-                  pool={m.shortPool}
+                  rfc={stats.shortRFC}
+                  count={stats.shortCount}
                   disabled={isLocked || submitting || !betOpen}
                   myPick={myBetOnThis === "short"}
                   confirming={isConfirmingShort}
@@ -248,28 +297,33 @@ export default function PredictionsSection() {
                 {100 - longPct}% ▼
               </span>
               <span className="bottom-bar-votes" style={{ fontFamily: "var(--font-mono), monospace", fontSize: 10, color: "var(--gray-400)", whiteSpace: "nowrap", width: 64, flexShrink: 0 }}>
-                {(PARTICIPANTS[m.id] ?? 0).toLocaleString()} votes
+                {total > 0 ? `${total} votes` : "no votes yet"}
               </span>
 
               {/* Spacer */}
               <div className="bottom-bar-divider" style={{ flex: "0 0 1px", background: "var(--gray-200)", height: 12, margin: "0 4px", flexShrink: 0 }} />
 
-              {/* Betting window status — fixed width so bar length is consistent */}
-              {betOpen ? (
-                <span className="bottom-bar-status" style={{
-                  fontFamily: "var(--font-mono), monospace", fontSize: 10, fontWeight: 600,
-                  color: "#16a34a", whiteSpace: "nowrap", width: 180, flexShrink: 0, textAlign: "right",
-                }}>
-                  Open · closes {schedule.closeLabel}{countdown ? ` (${countdown})` : ""}
-                </span>
-              ) : (
-                <span className="bottom-bar-status" style={{
-                  fontFamily: "var(--font-mono), monospace", fontSize: 10, fontWeight: 600,
-                  color: "#a1a1aa", whiteSpace: "nowrap", width: 180, flexShrink: 0, textAlign: "right",
-                }}>
-                  Closed · opens {schedule.openLabel}
-                </span>
-              )}
+              {/* Betting window status */}
+              {(() => {
+                const oh = String(schedule.openH).padStart(2, "0");
+                const om = String(schedule.openM).padStart(2, "0");
+                const ch = String(schedule.closeH).padStart(2, "0");
+                const cm = String(schedule.closeM).padStart(2, "0");
+                return (
+                  <span className="bottom-bar-status" style={{
+                    fontFamily: "var(--font-mono), monospace", fontSize: 10, fontWeight: 600,
+                    whiteSpace: "nowrap", flexShrink: 0, textAlign: "right",
+                    color: betOpen ? "#16a34a" : "#a1a1aa",
+                  }}>
+                    <span style={{
+                      display: "inline-block", width: 6, height: 6, borderRadius: "50%",
+                      background: betOpen ? "#16a34a" : "#a1a1aa",
+                      marginRight: 5, verticalAlign: "middle",
+                    }} />
+                    {oh}:{om} ~ {ch}:{cm} KST{countdown ? ` (${countdown})` : ""}
+                  </span>
+                );
+              })()}
             </div>
           </div>
         );
@@ -289,7 +343,8 @@ export default function PredictionsSection() {
 
 interface BetButtonProps {
   side: "long" | "short";
-  pool: string;
+  rfc: number;
+  count: number;
   disabled: boolean;
   myPick: boolean;
   confirming: boolean;
@@ -297,7 +352,7 @@ interface BetButtonProps {
   onClick: (e: React.MouseEvent) => void;
 }
 
-function BetButton({ side, pool, disabled, myPick, confirming, notLoggedIn, onClick }: BetButtonProps) {
+function BetButton({ side, rfc, count, disabled, myPick, confirming, notLoggedIn, onClick }: BetButtonProps) {
   const isLong = side === "long";
 
   const bg = myPick || confirming
@@ -345,7 +400,9 @@ function BetButton({ side, pool, disabled, myPick, confirming, notLoggedIn, onCl
       <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, fontWeight: 600, color: "var(--gray-800)" }}>
         {confirming && !myPick
           ? <span style={{ color: isLong ? "var(--up)" : "var(--down)" }}>−100 RFC</span>
-          : <>{pool} <span style={{ fontSize: 9, color: "var(--gray-400)" }}>RFC</span></>
+          : rfc > 0
+            ? <>{fmtRFC(rfc)} <span style={{ fontSize: 9, color: "var(--gray-400)" }}>RFC · {count}</span></>
+            : <span style={{ fontSize: 11, color: "var(--gray-400)" }}>−</span>
         }
       </span>
     </button>
