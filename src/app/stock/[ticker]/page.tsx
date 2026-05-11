@@ -3,6 +3,7 @@ import SearchBox from "@/components/SearchBox";
 import Link from "next/link";
 import { getStockData } from "@/lib/mockData";
 import StockChart from "@/components/StockChart";
+import LivePriceDisplay from "@/components/LivePriceDisplay";
 import type { StockInfo } from "@/app/api/stock/[ticker]/route";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000';
@@ -90,54 +91,7 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
                     {name}
                   </div>
                 </div>
-                {price != null && (
-                  <div style={{ textAlign: "right" }}>
-                    {/* 정규장 가격 행 */}
-                    {(() => {
-                      const regPrice   = liveInfo?.isAfterHours ? liveInfo.regularPrice! : price;
-                      const regChgPct  = liveInfo?.isAfterHours ? (liveInfo.regularChangePct ?? 0) : (changePct ?? 0);
-                      const regChgAmt  = liveInfo?.isAfterHours ? (liveInfo.regularChangeAmt ?? 0) : (liveInfo?.changeAmt ?? 0);
-                      const regUp      = regChgPct >= 0;
-                      const fmtPrice   = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
-                      const fmtAmt     = (v: number) => Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
-                      return (
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 36, fontWeight: 800, color: "var(--gray-900)", letterSpacing: "-0.03em", lineHeight: 1 }}>
-                            {fmtPrice(regPrice)}
-                          </span>
-                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 16, fontWeight: 700, color: regUp ? "var(--up)" : "var(--down)", whiteSpace: "nowrap" }}>
-                            {regUp ? "▲" : "▼"}{fmtAmt(regChgAmt)}
-                            <span style={{ fontSize: 14, marginLeft: 5, opacity: 0.9 }}>({Math.abs(regChgPct).toFixed(2)}%)</span>
-                          </span>
-                        </div>
-                      );
-                    })()}
-
-                    {/* 시간외 / 프리장 / 애프터장 행 */}
-                    {liveInfo?.isAfterHours && liveInfo.regularPrice != null && (
-                      (() => {
-                        const extUp  = liveInfo.changePct >= 0;
-                        const fmtP   = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
-                        const fmtA   = (v: number) => Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
-                        const label  = liveInfo.session === 'PRE' ? 'Pre Market' : liveInfo.session === 'POST' ? 'After Market' : 'After Market';
-                        return (
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
-                            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, fontWeight: 600, color: "var(--gray-500)", letterSpacing: "0.03em" }}>
-                              {label}
-                            </span>
-                            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 18, fontWeight: 700, color: "var(--gray-800)" }}>
-                              {fmtP(liveInfo.price)}
-                            </span>
-                            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 13, fontWeight: 600, color: extUp ? "var(--up)" : "var(--down)", whiteSpace: "nowrap" }}>
-                              {extUp ? "▲" : "▼"}{fmtA(liveInfo.changeAmt ?? 0)}
-                              <span style={{ fontSize: 12, marginLeft: 4, opacity: 0.9 }}>({Math.abs(liveInfo.changePct).toFixed(2)}%)</span>
-                            </span>
-                          </div>
-                        );
-                      })()
-                    )}
-                  </div>
-                )}
+                {liveInfo && <LivePriceDisplay ticker={ticker.toUpperCase()} initial={liveInfo} />}
               </div>
             </div>
 

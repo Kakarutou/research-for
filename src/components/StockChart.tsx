@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  createChart, CandlestickSeries, AreaSeries, HistogramSeries,
-  type IChartApi, type ISeriesApi, type UTCTimestamp, type TickMarkType,
+  createChart, CandlestickSeries, AreaSeries, HistogramSeries, TickMarkType,
+  type IChartApi, type ISeriesApi, type UTCTimestamp,
 } from "lightweight-charts";
 import type { ChartPoint, ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
 
@@ -33,16 +33,22 @@ const MINUTE_SET = new Set(MINUTE_TFS.map(t => t.tf));
 function padZ(n: number) { return n.toString().padStart(2, "0"); }
 
 function makeTickFormatter(isIntraday: boolean, utcOffset: number) {
-  return (time: UTCTimestamp, _type: TickMarkType, _locale: string): string => {
-    const ms  = (time + utcOffset) * 1000;
-    const d   = new Date(ms);
-    const yr  = d.getUTCFullYear();
-    const mo  = d.getUTCMonth() + 1;
-    const day = d.getUTCDate();
-    const hh  = d.getUTCHours();
-    const mm  = d.getUTCMinutes();
-    if (isIntraday) return `${padZ(hh)}:${padZ(mm)}`;
-    return `${mo}/${day}`;
+  return (time: UTCTimestamp, type: TickMarkType, _locale: string): string | null => {
+    // For intraday, apply exchange offset; for daily+ bars, use raw UTC (Yahoo stores midnight-local)
+    const localTs = isIntraday ? time + utcOffset : time;
+    const d = new Date(localTs * 1000);
+    switch (type) {
+      case TickMarkType.Year:
+        return String(d.getUTCFullYear());
+      case TickMarkType.Month:
+        return `${d.getUTCFullYear()}.${padZ(d.getUTCMonth() + 1)}`;
+      case TickMarkType.DayOfMonth:
+        return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+      case TickMarkType.Time:
+      case TickMarkType.TimeWithSeconds:
+        return `${padZ(d.getUTCHours())}:${padZ(d.getUTCMinutes())}`;
+    }
+    return null;
   };
 }
 
