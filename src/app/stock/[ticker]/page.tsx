@@ -3,6 +3,7 @@ import SearchBox from "@/components/SearchBox";
 import Link from "next/link";
 import StockChart from "@/components/StockChart";
 import LivePriceDisplay from "@/components/LivePriceDisplay";
+import NewsCard from "@/components/NewsCard";
 import type { StockInfo } from "@/app/api/stock/[ticker]/route";
 import type { NewsItem } from "@/app/api/stock/[ticker]/news/route";
 
@@ -23,13 +24,6 @@ const sectionTitle: React.CSSProperties = {
   color: "var(--gray-900)", marginBottom: 18,
   display: "flex", alignItems: "center", gap: 8,
 };
-
-function relTime(ts: number): string {
-  const diff = Math.floor(Date.now() / 1000) - ts;
-  if (diff < 3600) return `${Math.max(1, Math.floor(diff / 60))}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
 
 export default async function StockPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
@@ -101,7 +95,7 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
             </div>
 
             {/* Main layout */}
-            <div style={{ display: "grid", gridTemplateColumns: news.length > 0 ? "1fr 360px" : "1fr", gap: 24, alignItems: "start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: news.length > 0 ? "1fr 360px" : "1fr", gap: 24, alignItems: "stretch" }}>
               {/* Chart */}
               <div style={card}>
                 <div style={sectionTitle}>Price & Volume</div>
@@ -110,30 +104,8 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
 
               {/* News sidebar */}
               {news.length > 0 && (
-                <div style={card}>
-                  <div style={sectionTitle}>
-                    <span style={{ fontSize: 14 }}>📰</span>
-                    Latest News
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                    {news.map((item, i) => (
-                      <div key={i} style={{
-                        padding: "16px 0",
-                        borderBottom: i < news.length - 1 ? "1px solid var(--gray-100)" : "none",
-                      }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "var(--gray-500)", fontWeight: 600 }}>{item.source}</span>
-                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "var(--gray-400)" }}>{relTime(item.publishedAt)}</span>
-                        </div>
-                        {item.url
-                          ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-900)", lineHeight: 1.4, textDecoration: "none", display: "block" }}>
-                              {item.title}
-                            </a>
-                          : <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-900)", lineHeight: 1.4 }}>{item.title}</div>
-                        }
-                      </div>
-                    ))}
-                  </div>
+                <div style={{ ...card, display: "flex", flexDirection: "column" }}>
+                  <NewsCard news={news} />
                 </div>
               )}
             </div>
