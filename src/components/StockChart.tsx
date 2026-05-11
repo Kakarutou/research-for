@@ -2,12 +2,20 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
   createChart, CandlestickSeries, AreaSeries, HistogramSeries, TickMarkType,
-  type IChartApi, type ISeriesApi, type UTCTimestamp,
+  createSeriesMarkers,
+  type IChartApi, type ISeriesApi, type UTCTimestamp, type ISeriesMarkersPluginApi,
 } from "lightweight-charts";
-import type { ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
+import type { ChartEvent, ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
 
 const UP   = "#16a34a";
 const DOWN = "#dc2626";
+
+const EVENT_COLOR: Record<ChartEvent["type"], string> = {
+  earnings: "#3b82f6",
+  dividend: "#f59e0b",
+  split:    "#8b5cf6",
+  news:     "#6b7280",
+};
 
 const MINUTE_TFS = [
   { label: "1분",   tf: "1m" },
@@ -69,10 +77,11 @@ function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 const CHART_H = 340;
 
 export default function StockChart({ ticker, initialIsUp }: { ticker: string; initialIsUp?: boolean }) {
-  const chartRef   = useRef<HTMLDivElement>(null);
-  const chart      = useRef<IChartApi | null>(null);
-  const mainSeries = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
-  const volSeries  = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const chartRef      = useRef<HTMLDivElement>(null);
+  const chart         = useRef<IChartApi | null>(null);
+  const mainSeries    = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
+  const volSeries     = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const markersPlugin = useRef<ISeriesMarkersPluginApi<UTCTimestamp> | null>(null);
 
   const [chartType, setChartType]     = useState<"candle" | "line">("candle");
   const [tf, setTf]                   = useState("1d");
@@ -81,6 +90,7 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
   const [loading, setLoading]         = useState(true);
   const [unavail, setUnavail]         = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [tooltip, setTooltip]         = useState<{ x: number; y: number; text: string } | null>(null);
 
   const fetchData = useCallback(async () => {
     setUnavail(false);
@@ -162,6 +172,10 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
     const c = chart.current;
     if (!c || !result?.data?.length) return;
 
+    // Detach old markers plugin before removing series
+    markersPlugin.current?.detach();
+    markersPlugin.current = null;
+
     if (mainSeries.current) { c.removeSeries(mainSeries.current); mainSeries.current = null; }
 
     const data = result.data;
@@ -190,7 +204,43 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
       value: d.volume,
       color: d.close >= d.open ? "rgba(22,163,74,0.5)" : "rgba(220,38,38,0.5)",
     })));
+
+    // Attach event markers
+    if (result.events?.length && mainSeries.current) {
+      const sorted = [...result.events].sort((a, b) => a.time - b.time);
+      markersPlugin.current = createSeriesMarkers(
+        mainSeries.current as ISeriesApi<"Candlestick", UTCTimestamp>,
+        sorted.map(e => ({
+          time:     e.time as UTCTimestamp,
+          position: "belowBar" as const,
+          shape:    "circle" as const,
+          color:    EVENT_COLOR[e.type],
+          text:     e.label,
+          size:     1.2,
+          id:       `${e.type}_${e.time}`,
+        })),
+      );
+    }
   }, [chartType, result, color, isUp]);
+
+  // Show tooltip when crosshair is near an event marker
+  useEffect(() => {
+    const c = chart.current;
+    if (!c || !result?.events?.length) { setTooltip(null); return; }
+    const handler = (param: Parameters<Parameters<typeof c.subscribeCrosshairMove>[0]>[0]) => {
+      if (!param.time || !chartRef.current) { setTooltip(null); return; }
+      const barTime = param.time as UTCTimestamp;
+      const evt = result.events!.find(e => e.time === barTime);
+      if (!evt) { setTooltip(null); return; }
+      const rect = chartRef.current.getBoundingClientRect();
+      const x = (param.sourceEvent as MouseEvent | undefined)?.clientX;
+      const y = (param.sourceEvent as MouseEvent | undefined)?.clientY;
+      if (x == null || y == null) { setTooltip(null); return; }
+      setTooltip({ x: x - rect.left, y: y - rect.top - 36, text: evt.detail });
+    };
+    c.subscribeCrosshairMove(handler);
+    return () => { c.unsubscribeCrosshairMove(handler); setTooltip(null); };
+  }, [result]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -270,6 +320,23 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
       {/* Chart */}
       <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--gray-200)" }}>
         <div ref={chartRef} style={{ width: "100%" }} />
+
+        {/* Event marker tooltip */}
+        {tooltip && (
+          <div style={{
+            position: "absolute",
+            left: Math.min(tooltip.x + 8, (chartRef.current?.clientWidth ?? 400) - 200),
+            top: Math.max(tooltip.y, 8),
+            pointerEvents: "none", zIndex: 20,
+            background: "rgba(15,15,20,0.88)", backdropFilter: "blur(6px)",
+            color: "#fff", fontFamily: "monospace", fontSize: 12, fontWeight: 600,
+            padding: "5px 10px", borderRadius: 7,
+            whiteSpace: "nowrap",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          }}>
+            {tooltip.text}
+          </div>
+        )}
 
         {(loading || unavail) && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.75)", borderRadius: 8 }}>

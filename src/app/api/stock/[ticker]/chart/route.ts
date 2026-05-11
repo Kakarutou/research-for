@@ -33,8 +33,18 @@ export interface ChartPoint {
   volume: number;
 }
 
+export type ChartEventType = 'earnings' | 'dividend' | 'split' | 'news';
+
+export interface ChartEvent {
+  time: number;
+  type: ChartEventType;
+  label: string;   // short marker label  (≤3 chars)
+  detail: string;  // full tooltip text
+}
+
 export interface ChartResponse {
   data: ChartPoint[];
+  events?: ChartEvent[];
   price: number; changePct: number; changeAmt: number;
   name: string; symbol: string;
   isAfterHours?: boolean; regularPrice?: number;
@@ -183,9 +193,54 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ tick
     }
 
     const isIntraday = !['1d', '1w', '1mo', '1y'].includes(tf);
-    const utcOffset: number = meta.gmtoffset ?? -14400; // default ET
+    const utcOffset: number = meta.gmtoffset ?? -14400;
+
+    // News event markers — only for daily+ charts
+    const events: ChartEvent[] = [];
+    if (!isIntraday && data.length > 0) {
+      try {
+        const newsRes = await fetch(
+          `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(ticker)}&newsCount=20&enableFuzzyQuery=false`,
+          { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }, cache: 'no-store' },
+        );
+        if (newsRes.ok) {
+          const newsJson = await newsRes.json();
+          const newsItems: { providerPublishTime?: number; title?: string }[] = newsJson.news ?? [];
+
+          // Build a map: bar-date-string → ChartPoint, using utcOffset for daily alignment
+          const dateToBar = new Map<string, number>();
+          for (const bar of data) {
+            const d = new Date((bar.time + utcOffset) * 1000);
+            const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+            if (!dateToBar.has(key)) dateToBar.set(key, bar.time);
+          }
+
+          // Map each news item to its bar; merge multiple news on the same bar
+          const barNews = new Map<number, string[]>();
+          for (const item of newsItems) {
+            if (!item.providerPublishTime || !item.title) continue;
+            const d = new Date((item.providerPublishTime + utcOffset) * 1000);
+            const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+            const barTime = dateToBar.get(key);
+            if (barTime == null) continue;
+            if (!barNews.has(barTime)) barNews.set(barTime, []);
+            barNews.get(barTime)!.push(item.title);
+          }
+
+          for (const [barTime, headlines] of barNews) {
+            const label = headlines.length > 1 ? `${headlines.length}` : 'N';
+            const detail = headlines.length > 1
+              ? `뉴스 ${headlines.length}건 · ${headlines[0].slice(0, 48)}…`
+              : headlines[0].slice(0, 60);
+            events.push({ time: barTime, type: 'news', label, detail });
+          }
+        }
+      } catch { /* ignore news fetch errors */ }
+    }
+
     return NextResponse.json({
-      data, price, changePct, changeAmt,
+      data, events: events.length ? events : undefined,
+      price, changePct, changeAmt,
       name: (meta.shortName || meta.longName || ticker.toUpperCase()) as string,
       symbol: ticker.toUpperCase(),
       isIntraday,
