@@ -8,6 +8,7 @@ export interface StockInfo {
   changeAmt?: number;
   isAfterHours?: boolean;
   regularPrice?: number;
+  session?: 'PRE' | 'POST' | 'REGULAR';
 }
 
 function parseKoreanCode(ticker: string): string | null {
@@ -68,7 +69,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
   // Yahoo Finance for US stocks / crypto
   try {
     const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=2d`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=5m&range=1d&includePrePost=true`,
       { headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' }, cache: 'no-store' },
     );
     if (!res.ok) return NextResponse.json(null);
@@ -78,14 +79,38 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
 
     const meta = result.meta;
     const name: string = meta.shortName || meta.longName || ticker.toUpperCase();
-    const price: number = meta.regularMarketPrice;
-    let changePct: number = meta.regularMarketChangePercent ?? 0;
-    if (!changePct) {
-      const closes = (result.indicators.quote[0].close ?? []).filter((c: number | null): c is number => c != null);
-      if (closes.length >= 2) changePct = ((price - closes[closes.length - 2]) / closes[closes.length - 2]) * 100;
-    }
+    const regularPrice: number = meta.regularMarketPrice;
+    const previousClose: number = meta.chartPreviousClose ?? regularPrice;
 
-    return NextResponse.json({ symbol: ticker.toUpperCase(), name, price, changePct } satisfies StockInfo);
+    // Determine session from last candle timestamp vs currentTradingPeriod
+    const timestamps: number[] = result.timestamp ?? [];
+    const closes: (number | null)[] = result.indicators.quote[0].close ?? [];
+    const validPairs = timestamps
+      .map((ts, i) => ({ ts, close: closes[i] }))
+      .filter((p): p is { ts: number; close: number } => p.close != null);
+
+    const tp = meta.currentTradingPeriod;
+    const lastTs = validPairs.at(-1)?.ts ?? 0;
+    const lastClose = validPairs.at(-1)?.close ?? regularPrice;
+
+    const inPre  = tp?.pre  && lastTs >= tp.pre.start  && lastTs < tp.pre.end;
+    const inPost = tp?.post && lastTs >= tp.post.start && lastTs <= tp.post.end;
+    const isExtended = (inPre || inPost) && lastClose !== regularPrice;
+
+    const price  = isExtended ? lastClose : regularPrice;
+    const changePct = ((price - previousClose) / previousClose) * 100;
+    const changeAmt = price - previousClose;
+
+    return NextResponse.json({
+      symbol: ticker.toUpperCase(),
+      name,
+      price,
+      changePct,
+      changeAmt,
+      isAfterHours: !!isExtended,
+      regularPrice: isExtended ? regularPrice : undefined,
+      session: inPre ? 'PRE' : inPost ? 'POST' : 'REGULAR',
+    } satisfies StockInfo);
   } catch {
     return NextResponse.json(null);
   }

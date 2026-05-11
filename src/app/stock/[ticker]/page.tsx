@@ -96,9 +96,12 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
                       {liveInfo?.isAfterHours && (
                         <span style={{
                           fontFamily: "var(--font-mono), monospace", fontSize: 11, fontWeight: 700,
-                          padding: "2px 8px", borderRadius: 4,
-                          background: "rgba(124,58,237,0.1)", color: "#7c3aed", letterSpacing: "0.05em",
-                        }}>시간외</span>
+                          padding: "2px 8px", borderRadius: 4, letterSpacing: "0.05em",
+                          background: liveInfo.session === 'PRE' ? "rgba(234,179,8,0.12)" : "rgba(124,58,237,0.1)",
+                          color: liveInfo.session === 'PRE' ? "#b45309" : "#7c3aed",
+                        }}>
+                          {liveInfo.session === 'PRE' ? '프리장' : liveInfo.session === 'POST' ? '애프터장' : '시간외'}
+                        </span>
                       )}
                       <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 32, fontWeight: 700, color: "var(--gray-900)", letterSpacing: "-0.02em" }}>
                         {price.toLocaleString(undefined, { minimumFractionDigits: price < 100 ? 2 : 0, maximumFractionDigits: price < 100 ? 2 : 0 })}
@@ -116,7 +119,10 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
                     )}
                     {liveInfo?.isAfterHours && liveInfo.regularPrice != null && (
                       <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: "var(--gray-400)", marginTop: 4 }}>
-                        정규장 {liveInfo.regularPrice.toLocaleString()}
+                        정규장 {liveInfo.regularPrice.toLocaleString(undefined, {
+                          minimumFractionDigits: liveInfo.regularPrice < 100 ? 2 : 0,
+                          maximumFractionDigits: liveInfo.regularPrice < 100 ? 2 : 0,
+                        })}
                       </div>
                     )}
                   </div>
