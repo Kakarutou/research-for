@@ -4,7 +4,7 @@ import {
   createChart, CandlestickSeries, AreaSeries, HistogramSeries, TickMarkType,
   type IChartApi, type ISeriesApi, type UTCTimestamp,
 } from "lightweight-charts";
-import type { ChartPoint, ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
+import type { ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
 
 const UP   = "#16a34a";
 const DOWN = "#dc2626";
@@ -34,16 +34,12 @@ function padZ(n: number) { return n.toString().padStart(2, "0"); }
 
 function makeTickFormatter(isIntraday: boolean, utcOffset: number) {
   return (time: UTCTimestamp, type: TickMarkType, _locale: string): string | null => {
-    // For intraday, apply exchange offset; for daily+ bars, use raw UTC (Yahoo stores midnight-local)
     const localTs = isIntraday ? time + utcOffset : time;
     const d = new Date(localTs * 1000);
     switch (type) {
-      case TickMarkType.Year:
-        return String(d.getUTCFullYear());
-      case TickMarkType.Month:
-        return `${d.getUTCFullYear()}.${padZ(d.getUTCMonth() + 1)}`;
-      case TickMarkType.DayOfMonth:
-        return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+      case TickMarkType.Year:        return String(d.getUTCFullYear());
+      case TickMarkType.Month:       return `${d.getUTCFullYear()}.${padZ(d.getUTCMonth() + 1)}`;
+      case TickMarkType.DayOfMonth:  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
       case TickMarkType.Time:
       case TickMarkType.TimeWithSeconds:
         return `${padZ(d.getUTCHours())}:${padZ(d.getUTCMinutes())}`;
@@ -52,42 +48,38 @@ function makeTickFormatter(isIntraday: boolean, utcOffset: number) {
   };
 }
 
-// iOS-style toggle switch component
 function ToggleSwitch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   return (
     <div style={{ userSelect: "none", cursor: "pointer" }} onClick={onToggle}>
       <div style={{
         width: 44, height: 24, borderRadius: 12, position: "relative",
         background: on ? "#18181b" : "#d4d4d8",
-        transition: "background 0.2s",
-        flexShrink: 0,
+        transition: "background 0.2s", flexShrink: 0,
       }}>
         <div style={{
           position: "absolute", width: 18, height: 18, borderRadius: "50%",
-          background: "#fff", top: 3,
-          left: on ? 23 : 3,
-          transition: "left 0.2s",
-          boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+          background: "#fff", top: 3, left: on ? 23 : 3,
+          transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
         }} />
       </div>
     </div>
   );
 }
 
+const CHART_H = 340;
+
 export default function StockChart({ ticker, initialIsUp }: { ticker: string; initialIsUp?: boolean }) {
-  const priceRef  = useRef<HTMLDivElement>(null);
-  const volRef_el = useRef<HTMLDivElement>(null);
-  const priceChart = useRef<IChartApi | null>(null);
-  const volChart   = useRef<IChartApi | null>(null);
+  const chartRef   = useRef<HTMLDivElement>(null);
+  const chart      = useRef<IChartApi | null>(null);
   const mainSeries = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
   const volSeries  = useRef<ISeriesApi<"Histogram"> | null>(null);
 
-  const [chartType, setChartType]   = useState<"candle" | "line">("candle");
-  const [tf, setTf]                 = useState("1d");
-  const [dropOpen, setDropOpen]     = useState(false);
-  const [result, setResult]         = useState<ChartResponse | null>(null);
-  const [loading, setLoading]       = useState(true);
-  const [unavail, setUnavail]       = useState(false);
+  const [chartType, setChartType]     = useState<"candle" | "line">("candle");
+  const [tf, setTf]                   = useState("1d");
+  const [dropOpen, setDropOpen]       = useState(false);
+  const [result, setResult]           = useState<ChartResponse | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [unavail, setUnavail]         = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const fetchData = useCallback(async () => {
@@ -109,56 +101,48 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
     return () => clearInterval(id);
   }, [fetchData]);
 
-  const isUp   = result ? result.changePct >= 0 : (initialIsUp ?? true);
-  const color  = isUp ? UP : DOWN;
-  const isIntraday  = MINUTE_SET.has(tf);
-  const utcOffset   = result?.utcOffset ?? -14400;
+  const isUp      = result ? result.changePct >= 0 : (initialIsUp ?? true);
+  const color     = isUp ? UP : DOWN;
+  const isIntraday = MINUTE_SET.has(tf);
+  const utcOffset  = result?.utcOffset ?? -14400;
 
-  // Create price chart
+  // Create single chart with volume on a separate price scale
   useEffect(() => {
-    if (!priceRef.current) return;
-    const chart = createChart(priceRef.current, {
+    if (!chartRef.current) return;
+    const c = createChart(chartRef.current, {
       layout:    { background: { color: "transparent" }, textColor: "#71717a", fontFamily: "monospace", fontSize: 11 },
       grid:      { vertLines: { color: "#e4e4e7" }, horzLines: { color: "#e4e4e7" } },
       rightPriceScale: { borderColor: "#e4e4e7" },
-      timeScale: { borderColor: "#e4e4e7", timeVisible: isIntraday, secondsVisible: false },
+      timeScale: { borderColor: "#e4e4e7", timeVisible: false, secondsVisible: false },
       crosshair: { mode: 1 },
-      width:  priceRef.current.clientWidth,
-      height: 260,
+      width:  chartRef.current.clientWidth,
+      height: CHART_H,
     });
-    priceChart.current = chart;
+
+    // Price scale occupies top ~70%, leaving room for volume below
+    c.priceScale("right").applyOptions({ scaleMargins: { top: 0.05, bottom: 0.28 } });
+
+    // Volume histogram on a separate scale pinned to bottom 22%
+    const vs = c.addSeries(HistogramSeries, {
+      priceFormat:      { type: "volume" },
+      priceScaleId:     "volume",
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    c.priceScale("volume").applyOptions({ scaleMargins: { top: 0.78, bottom: 0 } });
+
+    chart.current     = c;
+    volSeries.current = vs;
+
     const ro = new ResizeObserver(() => {
-      if (priceRef.current) chart.resize(priceRef.current.clientWidth, 260);
+      if (chartRef.current) c.resize(chartRef.current.clientWidth, CHART_H);
     });
-    ro.observe(priceRef.current);
-    return () => { ro.disconnect(); chart.remove(); priceChart.current = null; };
+    ro.observe(chartRef.current);
+    return () => { ro.disconnect(); c.remove(); chart.current = null; volSeries.current = null; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Create volume chart
-  useEffect(() => {
-    if (!volRef_el.current) return;
-    const chart = createChart(volRef_el.current, {
-      layout:    { background: { color: "transparent" }, textColor: "#71717a", fontFamily: "monospace", fontSize: 10 },
-      grid:      { vertLines: { color: "#e4e4e7" }, horzLines: { color: "transparent" } },
-      rightPriceScale: { borderColor: "#e4e4e7", scaleMargins: { top: 0.1, bottom: 0 } },
-      timeScale: { borderColor: "#e4e4e7", visible: false },
-      crosshair: { mode: 1 },
-      width:  volRef_el.current.clientWidth,
-      height: 70,
-    });
-    const s = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" } });
-    volChart.current  = chart;
-    volSeries.current = s;
-    const ro = new ResizeObserver(() => {
-      if (volRef_el.current) chart.resize(volRef_el.current.clientWidth, 70);
-    });
-    ro.observe(volRef_el.current);
-    return () => { ro.disconnect(); chart.remove(); volChart.current = null; volSeries.current = null; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Sync time axis + crosshair formatter when tf changes
+  // Sync time axis + crosshair formatter
   useEffect(() => {
     const fmt = makeTickFormatter(isIntraday, utcOffset);
     const timeFmt = (time: UTCTimestamp): string => {
@@ -167,7 +151,7 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
       if (isIntraday) return `${padZ(d.getUTCHours())}:${padZ(d.getUTCMinutes())}`;
       return `${d.getUTCFullYear()}.${padZ(d.getUTCMonth() + 1)}.${padZ(d.getUTCDate())}`;
     };
-    priceChart.current?.applyOptions({
+    chart.current?.applyOptions({
       localization: { timeFormatter: timeFmt },
       timeScale: { timeVisible: isIntraday, secondsVisible: false, tickMarkFormatter: fmt },
     });
@@ -175,14 +159,14 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
 
   // Rebuild price series when chartType or data changes
   useEffect(() => {
-    const chart = priceChart.current;
-    if (!chart || !result?.data?.length) return;
+    const c = chart.current;
+    if (!c || !result?.data?.length) return;
 
-    if (mainSeries.current) { chart.removeSeries(mainSeries.current); mainSeries.current = null; }
+    if (mainSeries.current) { c.removeSeries(mainSeries.current); mainSeries.current = null; }
 
     const data = result.data;
     if (chartType === "candle") {
-      const s = chart.addSeries(CandlestickSeries, {
+      const s = c.addSeries(CandlestickSeries, {
         upColor: UP, downColor: DOWN,
         borderUpColor: UP, borderDownColor: DOWN,
         wickUpColor: UP, wickDownColor: DOWN,
@@ -190,8 +174,8 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
       s.setData(data.map(d => ({ time: d.time as UTCTimestamp, open: d.open, high: d.high, low: d.low, close: d.close })));
       mainSeries.current = s;
     } else {
-      const s = chart.addSeries(AreaSeries, {
-        lineColor: color,
+      const s = c.addSeries(AreaSeries, {
+        lineColor:   color,
         topColor:    isUp ? "rgba(22,163,74,0.18)" : "rgba(220,38,38,0.18)",
         bottomColor: "rgba(0,0,0,0)",
         lineWidth:   2,
@@ -199,14 +183,13 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
       s.setData(data.map(d => ({ time: d.time as UTCTimestamp, value: d.close })));
       mainSeries.current = s;
     }
-    chart.timeScale().fitContent();
+    c.timeScale().fitContent();
 
-    // Volume
     volSeries.current?.setData(data.map(d => ({
-      time: d.time as UTCTimestamp, value: d.volume,
+      time:  d.time as UTCTimestamp,
+      value: d.volume,
       color: d.close >= d.open ? "rgba(22,163,74,0.5)" : "rgba(220,38,38,0.5)",
     })));
-    volChart.current?.timeScale().fitContent();
   }, [chartType, result, color, isUp]);
 
   // Close dropdown on outside click
@@ -258,7 +241,7 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
                     fontFamily: "monospace", fontSize: 12, fontWeight: 600,
                     padding: "8px 14px", border: "none", cursor: "pointer",
                     background: tf === t.tf ? "var(--gray-100)" : "#fff",
-                    color: tf === t.tf ? "var(--gray-900)" : "var(--gray-600)",
+                    color:      tf === t.tf ? "var(--gray-900)" : "var(--gray-600)",
                   }}>
                     {t.label}
                   </button>
@@ -278,23 +261,15 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
           ))}
         </div>
 
-        {/* 캔들/라인 iOS toggle */}
         <ToggleSwitch
           on={chartType === "candle"}
           onToggle={() => setChartType(t => t === "candle" ? "line" : "candle")}
         />
       </div>
 
-      {/* Charts */}
+      {/* Chart */}
       <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--gray-200)" }}>
-        {/* Price chart */}
-        <div ref={priceRef} style={{ width: "100%" }} />
-
-        {/* Separator */}
-        <div style={{ height: 1, background: "var(--gray-200)", margin: "0" }} />
-
-        {/* Volume chart */}
-        <div ref={volRef_el} style={{ width: "100%" }} />
+        <div ref={chartRef} style={{ width: "100%" }} />
 
         {(loading || unavail) && (
           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.75)", borderRadius: 8 }}>
