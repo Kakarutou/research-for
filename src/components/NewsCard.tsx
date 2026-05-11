@@ -47,7 +47,7 @@ export default function NewsCard({ news }: { news: NewsItem[] }) {
       {/* Nav-pill style tabs */}
       <div style={{
         display: "flex", alignItems: "stretch",
-        height: 36, flexShrink: 0,
+        height: 44, flexShrink: 0,
         marginBottom: 14,
         background: "rgba(255,255,255,0.72)",
         backdropFilter: "blur(20px)",
@@ -57,7 +57,7 @@ export default function NewsCard({ news }: { news: NewsItem[] }) {
       }}>
         {TABS.map((t, idx) => {
           const active = tab === t;
-          const cnt    = cats[t].length;
+          const isNew  = cats[t].some(n => (Date.now() / 1000 - n.publishedAt) < 86400);
           return (
             <button
               key={t}
@@ -69,23 +69,24 @@ export default function NewsCard({ news }: { news: NewsItem[] }) {
                 borderRight: idx < TABS.length - 1 ? "1px solid rgba(0,0,0,0.06)" : "none",
                 cursor: "pointer",
                 fontFamily: "var(--font-sans), sans-serif",
-                fontSize: 12, fontWeight: active ? 600 : 500,
-                color: active ? "white" : "#52525b",
+                fontSize: 14, fontWeight: active ? 700 : 500,
+                color: active ? "white" : "#3f3f46",
                 letterSpacing: "-0.01em",
                 whiteSpace: "nowrap",
                 transition: "background 0.12s, color 0.12s",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", gap: 3,
               }}
             >
               {t}
-              {cnt > 0 && (
+              {isNew && (
                 <span style={{
-                  fontSize: 10, fontWeight: 700, lineHeight: 1,
-                  background: active ? "rgba(255,255,255,0.18)" : "rgba(0,0,0,0.07)",
-                  color: active ? "rgba(255,255,255,0.85)" : "#71717a",
-                  borderRadius: 4, padding: "2px 5px",
+                  fontSize: 9, fontWeight: 800, letterSpacing: "0.05em", lineHeight: 1,
+                  background: active ? "rgba(245,158,11,0.35)" : "#f59e0b",
+                  color: active ? "#fcd34d" : "white",
+                  borderRadius: 3, padding: "2px 5px",
                 }}>
-                  {cnt > 9 ? "9+" : cnt}
+                  NEW
                 </span>
               )}
             </button>

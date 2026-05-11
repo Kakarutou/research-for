@@ -95,7 +95,7 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
             </div>
 
             {/* Main layout */}
-            <div style={{ display: "grid", gridTemplateColumns: news.length > 0 ? "1fr 360px" : "1fr", gap: 24, alignItems: "stretch" }}>
+            <div style={{ display: "grid", gridTemplateColumns: news.length > 0 ? "1fr 240px" : "1fr", gap: 24, alignItems: "stretch" }}>
               {/* Chart */}
               <div style={card}>
                 <div style={sectionTitle}>Price & Volume</div>
@@ -104,7 +104,7 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
 
               {/* News sidebar */}
               {news.length > 0 && (
-                <div style={{ ...card, display: "flex", flexDirection: "column" }}>
+                <div style={{ ...card, padding: "20px 18px", display: "flex", flexDirection: "column" }}>
                   <NewsCard news={news} />
                 </div>
               )}
