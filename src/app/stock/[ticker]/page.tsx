@@ -92,38 +92,49 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
                 </div>
                 {price != null && (
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", marginBottom: 4 }}>
-                      {liveInfo?.isAfterHours && (
-                        <span style={{
-                          fontFamily: "var(--font-mono), monospace", fontSize: 11, fontWeight: 700,
-                          padding: "2px 8px", borderRadius: 4, letterSpacing: "0.05em",
-                          background: liveInfo.session === 'PRE' ? "rgba(234,179,8,0.12)" : "rgba(124,58,237,0.1)",
-                          color: liveInfo.session === 'PRE' ? "#b45309" : "#7c3aed",
-                        }}>
-                          {liveInfo.session === 'PRE' ? '프리장' : liveInfo.session === 'POST' ? '애프터장' : '시간외'}
-                        </span>
-                      )}
-                      <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 32, fontWeight: 700, color: "var(--gray-900)", letterSpacing: "-0.02em" }}>
-                        {price.toLocaleString(undefined, { minimumFractionDigits: price < 100 ? 2 : 0, maximumFractionDigits: price < 100 ? 2 : 0 })}
-                      </div>
-                    </div>
-                    {changePct != null && (
-                      <span style={{
-                        fontFamily: "var(--font-mono), monospace", fontSize: 14, fontWeight: 600,
-                        padding: "3px 10px", borderRadius: 6, display: "inline-block",
-                        color: isUp ? "var(--up)" : "var(--down)",
-                        background: isUp ? "var(--up-bg)" : "var(--down-bg)",
-                      }}>
-                        {isUp ? "+" : ""}{changePct.toFixed(2)}%
-                      </span>
-                    )}
+                    {/* 정규장 가격 행 */}
+                    {(() => {
+                      const regPrice   = liveInfo?.isAfterHours ? liveInfo.regularPrice! : price;
+                      const regChgPct  = liveInfo?.isAfterHours ? (liveInfo.regularChangePct ?? 0) : (changePct ?? 0);
+                      const regChgAmt  = liveInfo?.isAfterHours ? (liveInfo.regularChangeAmt ?? 0) : (liveInfo?.changeAmt ?? 0);
+                      const regUp      = regChgPct >= 0;
+                      const fmtPrice   = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
+                      const fmtAmt     = (v: number) => Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
+                      return (
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 36, fontWeight: 800, color: "var(--gray-900)", letterSpacing: "-0.03em", lineHeight: 1 }}>
+                            {fmtPrice(regPrice)}
+                          </span>
+                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 16, fontWeight: 700, color: regUp ? "var(--up)" : "var(--down)", whiteSpace: "nowrap" }}>
+                            {regUp ? "▲" : "▼"}{fmtAmt(regChgAmt)}
+                            <span style={{ fontSize: 14, marginLeft: 5, opacity: 0.9 }}>({Math.abs(regChgPct).toFixed(2)}%)</span>
+                          </span>
+                        </div>
+                      );
+                    })()}
+
+                    {/* 시간외 / 프리장 / 애프터장 행 */}
                     {liveInfo?.isAfterHours && liveInfo.regularPrice != null && (
-                      <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: "var(--gray-400)", marginTop: 4 }}>
-                        정규장 {liveInfo.regularPrice.toLocaleString(undefined, {
-                          minimumFractionDigits: liveInfo.regularPrice < 100 ? 2 : 0,
-                          maximumFractionDigits: liveInfo.regularPrice < 100 ? 2 : 0,
-                        })}
-                      </div>
+                      (() => {
+                        const extUp  = liveInfo.changePct >= 0;
+                        const fmtP   = (v: number) => v.toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
+                        const fmtA   = (v: number) => Math.abs(v).toLocaleString(undefined, { minimumFractionDigits: v < 100 ? 2 : 0, maximumFractionDigits: v < 100 ? 2 : 0 });
+                        const label  = liveInfo.session === 'PRE' ? 'Pre Market' : liveInfo.session === 'POST' ? 'After Market' : 'After Market';
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end", marginTop: 8, flexWrap: "wrap" }}>
+                            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, fontWeight: 600, color: "var(--gray-500)", letterSpacing: "0.03em" }}>
+                              {label}
+                            </span>
+                            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 18, fontWeight: 700, color: "var(--gray-800)" }}>
+                              {fmtP(liveInfo.price)}
+                            </span>
+                            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 13, fontWeight: 600, color: extUp ? "var(--up)" : "var(--down)", whiteSpace: "nowrap" }}>
+                              {extUp ? "▲" : "▼"}{fmtA(liveInfo.changeAmt ?? 0)}
+                              <span style={{ fontSize: 12, marginLeft: 4, opacity: 0.9 }}>({Math.abs(liveInfo.changePct).toFixed(2)}%)</span>
+                            </span>
+                          </div>
+                        );
+                      })()
                     )}
                   </div>
                 )}

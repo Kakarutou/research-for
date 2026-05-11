@@ -8,6 +8,8 @@ export interface StockInfo {
   changeAmt?: number;
   isAfterHours?: boolean;
   regularPrice?: number;
+  regularChangePct?: number;
+  regularChangeAmt?: number;
   session?: 'PRE' | 'POST' | 'REGULAR';
 }
 
@@ -51,10 +53,13 @@ async function fetchNaverInfo(code: string): Promise<StockInfo | null> {
       changeAmt: Number(String(over.compareToPreviousClosePrice).replace(/,/g, '')) * sign(over.compareToPreviousPrice),
       isAfterHours: true,
       regularPrice,
+      regularChangePct,
+      regularChangeAmt,
+      session: 'POST',
     };
   }
 
-  return { symbol: code, name, price: regularPrice, changePct: regularChangePct, changeAmt: regularChangeAmt, isAfterHours: false };
+  return { symbol: code, name, price: regularPrice, changePct: regularChangePct, changeAmt: regularChangeAmt, isAfterHours: false, session: 'REGULAR' };
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
@@ -97,9 +102,11 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
     const inPost = tp?.post && lastTs >= tp.post.start && lastTs <= tp.post.end;
     const isExtended = (inPre || inPost) && lastClose !== regularPrice;
 
-    const price  = isExtended ? lastClose : regularPrice;
-    const changePct = ((price - previousClose) / previousClose) * 100;
-    const changeAmt = price - previousClose;
+    const regularChangePct = ((regularPrice - previousClose) / previousClose) * 100;
+    const regularChangeAmt = regularPrice - previousClose;
+    const price      = isExtended ? lastClose : regularPrice;
+    const changePct  = ((price - previousClose) / previousClose) * 100;
+    const changeAmt  = price - previousClose;
 
     return NextResponse.json({
       symbol: ticker.toUpperCase(),
@@ -109,6 +116,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
       changeAmt,
       isAfterHours: !!isExtended,
       regularPrice: isExtended ? regularPrice : undefined,
+      regularChangePct: isExtended ? regularChangePct : undefined,
+      regularChangeAmt: isExtended ? regularChangeAmt : undefined,
       session: inPre ? 'PRE' : inPost ? 'POST' : 'REGULAR',
     } satisfies StockInfo);
   } catch {
