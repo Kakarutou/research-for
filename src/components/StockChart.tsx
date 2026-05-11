@@ -158,10 +158,17 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync time axis + formatter when tf changes
+  // Sync time axis + crosshair formatter when tf changes
   useEffect(() => {
     const fmt = makeTickFormatter(isIntraday, utcOffset);
+    const timeFmt = (time: UTCTimestamp): string => {
+      const localTs = isIntraday ? time + utcOffset : time;
+      const d = new Date(localTs * 1000);
+      if (isIntraday) return `${padZ(d.getUTCHours())}:${padZ(d.getUTCMinutes())}`;
+      return `${d.getUTCFullYear()}.${padZ(d.getUTCMonth() + 1)}.${padZ(d.getUTCDate())}`;
+    };
     priceChart.current?.applyOptions({
+      localization: { timeFormatter: timeFmt },
       timeScale: { timeVisible: isIntraday, secondsVisible: false, tickMarkFormatter: fmt },
     });
   }, [isIntraday, utcOffset]);
