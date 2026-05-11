@@ -1,10 +1,10 @@
 import TopNav from "@/components/TopNav";
 import SearchBox from "@/components/SearchBox";
 import Link from "next/link";
-import { getStockData } from "@/lib/mockData";
 import StockChart from "@/components/StockChart";
 import LivePriceDisplay from "@/components/LivePriceDisplay";
 import type { StockInfo } from "@/app/api/stock/[ticker]/route";
+import type { NewsItem } from "@/app/api/stock/[ticker]/news/route";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000';
 
@@ -24,22 +24,27 @@ const sectionTitle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: 8,
 };
 
+function relTime(ts: number): string {
+  const diff = Math.floor(Date.now() / 1000) - ts;
+  if (diff < 3600) return `${Math.max(1, Math.floor(diff / 60))}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 export default async function StockPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
-  // Always fetch live price from Yahoo Finance
-  let liveInfo: StockInfo | null = null;
-  try {
-    const res = await fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}`, { cache: 'no-store' });
-    if (res.ok) liveInfo = await res.json();
-  } catch {}
+  const [liveInfo, news] = await Promise.all([
+    fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() as Promise<StockInfo | null> : null)
+      .catch(() => null),
+    fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}/news`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() as Promise<NewsItem[]> : [])
+      .catch(() => [] as NewsItem[]),
+  ]);
 
-  // Extra data (short selling, issuance, news) from mock when available
-  const mockData = getStockData(ticker);
-
-  const notFound = !liveInfo && !mockData;
-  const name = liveInfo?.name ?? mockData?.name ?? ticker.toUpperCase();
-  const price = liveInfo?.price ?? null;
+  const notFound = !liveInfo;
+  const name = liveInfo?.name ?? ticker.toUpperCase();
   const changePct = liveInfo?.changePct ?? null;
   const isUp = (changePct ?? 0) >= 0;
 
@@ -96,104 +101,36 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
             </div>
 
             {/* Main layout */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 24, alignItems: "start" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-
-                {/* Chart */}
-                <div style={card}>
-                  <div style={sectionTitle}>Price & Volume</div>
-                  <StockChart ticker={ticker.toUpperCase()} initialIsUp={isUp} />
-                </div>
-
-                {mockData && (
-                  <>
-                    {/* Short Selling */}
-                    <div style={card}>
-                      <div style={sectionTitle}>
-                        <span style={{ fontSize: 14 }}>⚡</span>
-                        Short Selling
-                      </div>
-                      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                        <thead>
-                          <tr style={{ borderBottom: "1px solid var(--gray-200)" }}>
-                            {["Date", "Short Ratio", "Short Volume"].map(h => (
-                              <th key={h} style={{
-                                fontFamily: "var(--font-mono), monospace", fontSize: 11,
-                                color: "var(--gray-500)", textAlign: "left",
-                                padding: "8px 0", letterSpacing: "0.08em", textTransform: "uppercase",
-                              }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {mockData.shortSelling.map((row, i) => (
-                            <tr key={i} style={{ borderBottom: "1px solid var(--gray-100)" }}>
-                              <td style={{ fontFamily: "var(--font-mono), monospace", fontSize: 13, color: "var(--gray-600)", padding: "12px 0" }}>{row.date}</td>
-                              <td style={{ padding: "12px 0" }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <div style={{ flex: 1, height: 6, background: "var(--gray-100)", borderRadius: 3, maxWidth: 120 }}>
-                                    <div style={{ width: `${Math.min(row.ratio * 20, 100)}%`, height: "100%", background: "var(--down)", borderRadius: 3 }} />
-                                  </div>
-                                  <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 13, fontWeight: 600, color: "var(--down)" }}>
-                                    {row.ratio}%
-                                  </span>
-                                </div>
-                              </td>
-                              <td style={{ fontFamily: "var(--font-mono), monospace", fontSize: 13, color: "var(--gray-700)", padding: "12px 0" }}>{row.amount}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Share Issuance */}
-                    <div style={card}>
-                      <div style={sectionTitle}>
-                        <span style={{ fontSize: 14 }}>📄</span>
-                        Share Issuance
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        {mockData.issuance.map((item, i) => (
-                          <div key={i} style={{
-                            display: "flex", alignItems: "center", justifyContent: "space-between",
-                            padding: "14px 16px", background: "var(--gray-50)",
-                            borderRadius: 10, border: "1px solid var(--gray-100)",
-                          }}>
-                            <div>
-                              <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: "var(--gray-500)", marginBottom: 4 }}>{item.date}</div>
-                              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--gray-800)" }}>{item.type}</div>
-                            </div>
-                            <div style={{ fontFamily: "var(--font-mono), monospace", fontSize: 14, fontWeight: 700, color: "var(--gray-900)" }}>
-                              +{item.shares.toLocaleString()}
-                              <span style={{ fontSize: 11, color: "var(--gray-400)", marginLeft: 4 }}>shares</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                )}
+            <div style={{ display: "grid", gridTemplateColumns: news.length > 0 ? "1fr 360px" : "1fr", gap: 24, alignItems: "start" }}>
+              {/* Chart */}
+              <div style={card}>
+                <div style={sectionTitle}>Price & Volume</div>
+                <StockChart ticker={ticker.toUpperCase()} initialIsUp={isUp} />
               </div>
 
               {/* News sidebar */}
-              {mockData && (
+              {news.length > 0 && (
                 <div style={card}>
                   <div style={sectionTitle}>
                     <span style={{ fontSize: 14 }}>📰</span>
                     Latest News
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                    {mockData.news.map((item, i) => (
+                    {news.map((item, i) => (
                       <div key={i} style={{
                         padding: "16px 0",
-                        borderBottom: i < mockData.news.length - 1 ? "1px solid var(--gray-100)" : "none",
+                        borderBottom: i < news.length - 1 ? "1px solid var(--gray-100)" : "none",
                       }}>
                         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                           <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "var(--gray-500)", fontWeight: 600 }}>{item.source}</span>
-                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "var(--gray-400)" }}>{item.time}</span>
+                          <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "var(--gray-400)" }}>{relTime(item.publishedAt)}</span>
                         </div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-900)", lineHeight: 1.4, marginBottom: 6 }}>{item.title}</div>
-                        <div style={{ fontSize: 12, color: "var(--gray-500)", lineHeight: 1.5 }}>{item.summary}</div>
+                        {item.url
+                          ? <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-900)", lineHeight: 1.4, textDecoration: "none", display: "block" }}>
+                              {item.title}
+                            </a>
+                          : <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-900)", lineHeight: 1.4 }}>{item.title}</div>
+                        }
                       </div>
                     ))}
                   </div>
