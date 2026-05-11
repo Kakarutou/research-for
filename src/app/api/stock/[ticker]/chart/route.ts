@@ -14,15 +14,12 @@ const NAVER_HEADERS = {
   'Referer': 'https://m.stock.naver.com/',
 };
 
-function yahooLabel(ts: number, range: string): string {
-  const d = new Date(ts * 1000);
-  if (range === '1d') return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-  if (range === '5d') return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
 function naverDateStr(d: Date): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}000000`;
+}
+
+function naverDateToUnix(s: string): number {
+  return Math.floor(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8)) / 1000);
 }
 
 function parseKoreanCode(ticker: string): string | null {
@@ -32,8 +29,17 @@ function parseKoreanCode(ticker: string): string | null {
   return null;
 }
 
+export interface ChartPoint {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 export interface ChartResponse {
-  data: { date: string; close: number; volume: number }[];
+  data: ChartPoint[];
   price: number;
   changePct: number;
   changeAmt: number;
@@ -45,9 +51,8 @@ export interface ChartResponse {
 
 async function fetchNaverChart(code: string, range: string): Promise<ChartResponse | null> {
   const now = new Date();
-  const end = naverDateStr(now);
   const start = new Date(now);
-  if (range === '1d')       start.setDate(now.getDate() - 10);
+  if      (range === '1d')  start.setDate(now.getDate() - 10);
   else if (range === '5d')  start.setDate(now.getDate() - 14);
   else if (range === '1mo') start.setMonth(now.getMonth() - 1);
   else if (range === '3mo') start.setMonth(now.getMonth() - 3);
@@ -55,22 +60,25 @@ async function fetchNaverChart(code: string, range: string): Promise<ChartRespon
   else                      start.setMonth(now.getMonth() - 1);
 
   const [chartRes, basicRes] = await Promise.all([
-    fetch(`https://api.stock.naver.com/chart/domestic/item/${code}/day?startDateTime=${naverDateStr(start)}&endDateTime=${end}`, {
+    fetch(`https://api.stock.naver.com/chart/domestic/item/${code}/day?startDateTime=${naverDateStr(start)}&endDateTime=${naverDateStr(now)}`, {
       headers: NAVER_HEADERS, cache: 'no-store',
     }),
     fetch(`https://m.stock.naver.com/api/stock/${code}/basic`, {
       headers: NAVER_HEADERS, cache: 'no-store',
     }),
   ]);
-
   if (!chartRes.ok || !basicRes.ok) return null;
-  const chartData: { localDate: string; closePrice: number; accumulatedTradingVolume: number }[] = await chartRes.json();
+
+  const raw: { localDate: string; openPrice: number; highPrice: number; lowPrice: number; closePrice: number; accumulatedTradingVolume: number }[] = await chartRes.json();
   const basic = await basicRes.json();
 
-  const data = chartData.map(item => ({
-    date: `${parseInt(item.localDate.slice(4, 6))}/${parseInt(item.localDate.slice(6, 8))}`,
-    close: item.closePrice,
-    volume: item.accumulatedTradingVolume,
+  const data: ChartPoint[] = raw.map(r => ({
+    time:   naverDateToUnix(r.localDate),
+    open:   r.openPrice,
+    high:   r.highPrice,
+    low:    r.lowPrice,
+    close:  r.closePrice,
+    volume: r.accumulatedTradingVolume,
   }));
 
   const sign = (f: { name?: string } | undefined) => f?.name === 'FALLING' ? -1 : 1;
@@ -78,19 +86,11 @@ async function fetchNaverChart(code: string, range: string): Promise<ChartRespon
   const over = basic.overMarketPriceInfo;
   const overPrice = over?.overPrice ? Number(String(over.overPrice).replace(/,/g, '')) : 0;
 
-  const price = overPrice > 0 ? overPrice : regularPrice;
-  const changePct = overPrice > 0
-    ? parseFloat(over.fluctuationsRatio) * sign(over.compareToPreviousPrice)
-    : parseFloat(basic.fluctuationsRatio) * sign(basic.compareToPreviousPrice);
-  const changeAmt = overPrice > 0
-    ? Number(String(over.compareToPreviousClosePrice).replace(/,/g, '')) * sign(over.compareToPreviousPrice)
-    : Number(String(basic.compareToPreviousClosePrice).replace(/,/g, '')) * sign(basic.compareToPreviousPrice);
-
   return {
     data,
-    price,
-    changePct,
-    changeAmt,
+    price:     overPrice > 0 ? overPrice : regularPrice,
+    changePct: overPrice > 0 ? parseFloat(over.fluctuationsRatio) * sign(over.compareToPreviousPrice) : parseFloat(basic.fluctuationsRatio) * sign(basic.compareToPreviousPrice),
+    changeAmt: overPrice > 0 ? Number(String(over.compareToPreviousClosePrice).replace(/,/g, '')) * sign(over.compareToPreviousPrice) : Number(String(basic.compareToPreviousClosePrice).replace(/,/g, '')) * sign(basic.compareToPreviousPrice),
     name: basic.stockName,
     symbol: code,
     isAfterHours: overPrice > 0,
@@ -121,20 +121,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ tick
     if (!result) return NextResponse.json(null);
 
     const timestamps: number[] = result.timestamp ?? [];
-    const quote = result.indicators.quote[0];
-    const data = timestamps
-      .map((ts, i) => ({ date: yahooLabel(ts, range), close: quote.close[i], volume: quote.volume[i] ?? 0 }))
-      .filter((d): d is { date: string; close: number; volume: number } => d.close != null);
+    const q = result.indicators.quote[0];
+
+    const data: ChartPoint[] = timestamps
+      .map((ts, i) => ({
+        time:   ts,
+        open:   q.open[i],
+        high:   q.high[i],
+        low:    q.low[i],
+        close:  q.close[i],
+        volume: q.volume[i] ?? 0,
+      }))
+      .filter(d => d.close != null && d.open != null);
 
     const meta = result.meta;
-    const price = meta.regularMarketPrice as number;
+    const price: number = meta.regularMarketPrice;
     let changePct: number = meta.regularMarketChangePercent ?? 0;
     let changeAmt: number = meta.regularMarketChange ?? 0;
     if (!changePct && data.length >= 2) {
-      const prev = data[data.length - 2].close;
-      const curr = data[data.length - 1].close;
-      changePct = ((curr - prev) / prev) * 100;
-      changeAmt = curr - prev;
+      changePct = ((data.at(-1)!.close - data.at(-2)!.close) / data.at(-2)!.close) * 100;
+      changeAmt = data.at(-1)!.close - data.at(-2)!.close;
     }
 
     return NextResponse.json({

@@ -1,10 +1,15 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar,
-} from "recharts";
-import type { ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
+  createChart,
+  CandlestickSeries,
+  AreaSeries,
+  HistogramSeries,
+  type IChartApi,
+  type ISeriesApi,
+  type UTCTimestamp,
+} from "lightweight-charts";
+import type { ChartPoint, ChartResponse } from "@/app/api/stock/[ticker]/chart/route";
 
 const PERIODS = [
   { label: "1D", range: "1d" },
@@ -14,20 +19,26 @@ const PERIODS = [
   { label: "1Y", range: "1y" },
 ];
 
+const UP   = "#16a34a";
+const DOWN = "#dc2626";
+
 export default function StockChart({ ticker, initialIsUp }: { ticker: string; initialIsUp?: boolean }) {
-  const [range, setRange] = useState("1mo");
-  const [chart, setChart] = useState<ChartResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const chartRef     = useRef<IChartApi | null>(null);
+  const mainRef      = useRef<ISeriesApi<"Candlestick"> | ISeriesApi<"Area"> | null>(null);
+  const volRef       = useRef<ISeriesApi<"Histogram"> | null>(null);
+
+  const [chartType, setChartType]   = useState<"candle" | "line">("candle");
+  const [range, setRange]           = useState("1mo");
+  const [result, setResult]         = useState<ChartResponse | null>(null);
+  const [loading, setLoading]       = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [mounted, setMounted] = useState(false);
 
-  useEffect(() => { setMounted(true); }, []);
-
-  const fetchChart = useCallback(async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const res = await fetch(`/api/stock/${encodeURIComponent(ticker)}/chart?range=${range}`, { cache: 'no-store' });
+      const res  = await fetch(`/api/stock/${encodeURIComponent(ticker)}/chart?range=${range}`, { cache: "no-store" });
       const json: ChartResponse | null = await res.json();
-      if (json) { setChart(json); setLastUpdated(new Date()); }
+      if (json?.data?.length) { setResult(json); setLastUpdated(new Date()); }
     } finally {
       setLoading(false);
     }
@@ -35,104 +46,148 @@ export default function StockChart({ ticker, initialIsUp }: { ticker: string; in
 
   useEffect(() => {
     setLoading(true);
-    fetchChart();
-    const id = setInterval(fetchChart, 5 * 60 * 1000);
+    fetchData();
+    const id = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(id);
-  }, [fetchChart]);
+  }, [fetchData]);
 
-  const isUp = chart ? chart.changePct >= 0 : (initialIsUp ?? true);
-  const color = isUp ? "#16a34a" : "#dc2626";
+  const isUp  = result ? result.changePct >= 0 : (initialIsUp ?? true);
+  const color = isUp ? UP : DOWN;
+
+  // Create chart once on mount
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const chart = createChart(containerRef.current, {
+      layout:    { background: { color: "transparent" }, textColor: "#71717a", fontFamily: "monospace", fontSize: 11 },
+      grid:      { vertLines: { color: "#e4e4e7" }, horzLines: { color: "#e4e4e7" } },
+      rightPriceScale: { borderColor: "#e4e4e7" },
+      timeScale: { borderColor: "#e4e4e7", timeVisible: true, secondsVisible: false },
+      crosshair: { mode: 1 },
+      width:  containerRef.current.clientWidth,
+      height: 320,
+    });
+    chartRef.current = chart;
+
+    // Volume series — bottom 15% of chart area
+    const vol = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "vol",
+    });
+    vol.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+    volRef.current = vol;
+
+    // Resize
+    const ro = new ResizeObserver(() => {
+      if (containerRef.current) chart.resize(containerRef.current.clientWidth, 320);
+    });
+    ro.observe(containerRef.current);
+
+    return () => { ro.disconnect(); chart.remove(); chartRef.current = null; };
+  }, []);
+
+  // Update series when chartType or data changes
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !result?.data?.length) return;
+
+    // Remove old main series
+    if (mainRef.current) { chart.removeSeries(mainRef.current); mainRef.current = null; }
+
+    const data: ChartPoint[] = result.data;
+
+    if (chartType === "candle") {
+      const s = chart.addSeries(CandlestickSeries, {
+        upColor:        UP,
+        downColor:      DOWN,
+        borderUpColor:  UP,
+        borderDownColor: DOWN,
+        wickUpColor:    UP,
+        wickDownColor:  DOWN,
+      });
+      s.setData(data.map(d => ({ time: d.time as UTCTimestamp, open: d.open, high: d.high, low: d.low, close: d.close })));
+      mainRef.current = s;
+    } else {
+      const s = chart.addSeries(AreaSeries, {
+        lineColor:   color,
+        topColor:    isUp ? "rgba(22,163,74,0.18)" : "rgba(220,38,38,0.18)",
+        bottomColor: "rgba(0,0,0,0)",
+        lineWidth:   2,
+      });
+      s.setData(data.map(d => ({ time: d.time as UTCTimestamp, value: d.close })));
+      mainRef.current = s;
+    }
+
+    // Volume
+    volRef.current?.setData(data.map(d => ({
+      time:  d.time as UTCTimestamp,
+      value: d.volume,
+      color: d.close >= d.open ? "rgba(22,163,74,0.4)" : "rgba(220,38,38,0.4)",
+    })));
+
+    chart.timeScale().fitContent();
+  }, [chartType, result, color, isUp]);
+
+  const btnBase: React.CSSProperties = {
+    fontFamily: "monospace", fontSize: 12, fontWeight: 600,
+    padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: "none",
+    transition: "all 0.15s",
+  };
 
   return (
     <div>
-      {/* Period selector */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-        {PERIODS.map(p => (
-          <button key={p.range} onClick={() => setRange(p.range)} style={{
-            fontFamily: "var(--font-mono), monospace", fontSize: 12, fontWeight: 600,
-            padding: "4px 12px", borderRadius: 6, cursor: "pointer", border: "none",
-            background: range === p.range ? color : "var(--gray-100)",
-            color: range === p.range ? "#fff" : "var(--gray-500)",
-            transition: "all 0.15s",
-          }}>
-            {p.label}
-          </button>
-        ))}
+      {/* Controls row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        {/* Period */}
+        <div style={{ display: "flex", gap: 4 }}>
+          {PERIODS.map(p => (
+            <button key={p.range} onClick={() => setRange(p.range)} style={{
+              ...btnBase,
+              background: range === p.range ? color : "var(--gray-100)",
+              color:      range === p.range ? "#fff" : "var(--gray-500)",
+            }}>{p.label}</button>
+          ))}
+        </div>
+
+        {/* Chart type toggle */}
+        <div style={{ display: "flex", gap: 4, background: "var(--gray-100)", borderRadius: 8, padding: 3 }}>
+          {(["candle", "line"] as const).map(t => (
+            <button key={t} onClick={() => setChartType(t)} style={{
+              ...btnBase,
+              padding: "4px 14px", borderRadius: 6,
+              background: chartType === t ? "#fff" : "transparent",
+              color:      chartType === t ? "var(--gray-900)" : "var(--gray-400)",
+              boxShadow:  chartType === t ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+            }}>
+              {t === "candle" ? "🕯 캔들" : "📈 라인"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {loading ? (
-        <div style={{ height: 280, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      {/* Chart container */}
+      <div style={{ position: "relative" }}>
+        <div ref={containerRef} style={{ width: "100%", height: 320, borderRadius: 8, overflow: "hidden" }} />
+        {loading && (
           <div style={{
-            width: 22, height: 22,
-            border: `2px solid ${color}`, borderTopColor: "transparent",
-            borderRadius: "50%", animation: "spin 0.8s linear infinite",
-          }} />
-        </div>
-      ) : !chart?.data?.length ? (
-        <div style={{ height: 280, display: "flex", alignItems: "center", justifyContent: "center", color: "#71717a", fontSize: 13 }}>
-          No chart data available
-        </div>
-      ) : !mounted ? (
-        <div style={{ height: 280 }} />
-      ) : (
-        <>
-          {/* Price area chart */}
-          <div style={{ height: 200 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chart.data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id={`grad-${ticker}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor={color} stopOpacity={0.15} />
-                    <stop offset="95%" stopColor={color} stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tick={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, fill: "#71717a" }}
-                  axisLine={false} tickLine={false} interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, fill: "#71717a" }}
-                  axisLine={false} tickLine={false} width={65} domain={["auto", "auto"]}
-                  tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(2)}
-                />
-                <Tooltip
-                  contentStyle={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, border: "1px solid #e4e4e7", borderRadius: 8, background: "rgba(255,255,255,0.97)" }}
-                  labelStyle={{ fontWeight: 600, color: "#18181b" }}
-                  formatter={(v: unknown) => [
-                    Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-                    "Price",
-                  ]}
-                />
-                <Area type="monotone" dataKey="close" stroke={color} strokeWidth={2} fill={`url(#grad-${ticker})`} dot={false} activeDot={{ r: 4 }} />
-              </AreaChart>
-            </ResponsiveContainer>
+            position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center",
+            background: "rgba(255,255,255,0.6)", borderRadius: 8,
+          }}>
+            <div style={{
+              width: 22, height: 22,
+              border: `2px solid ${color}`, borderTopColor: "transparent",
+              borderRadius: "50%", animation: "spin 0.8s linear infinite",
+            }} />
           </div>
+        )}
+      </div>
 
-          {/* Volume bar chart */}
-          <div style={{ height: 70 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chart.data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                <XAxis dataKey="date" hide />
-                <YAxis hide />
-                <Tooltip
-                  contentStyle={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, border: "1px solid #e4e4e7", borderRadius: 8 }}
-                  formatter={(v: unknown) => [`${(Number(v) / 1_000_000).toFixed(2)}M`, "Vol"]}
-                />
-                <Bar dataKey="volume" fill={color} opacity={0.35} radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-            <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 11, color: "var(--gray-400)" }}>
-              Yahoo Finance · 15min delay
-              {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`}
-            </span>
-          </div>
-        </>
-      )}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+        <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--gray-400)" }}>
+          15min delay
+          {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`}
+        </span>
+      </div>
     </div>
   );
 }
