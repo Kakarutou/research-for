@@ -6,6 +6,7 @@ import LivePriceDisplay from "@/components/LivePriceDisplay";
 import NewsCard from "@/components/NewsCard";
 import type { StockInfo } from "@/app/api/stock/[ticker]/route";
 import type { NewsItem } from "@/app/api/stock/[ticker]/news/route";
+import type { EarningsItem } from "@/app/api/stock/[ticker]/earnings/route";
 
 const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000';
 
@@ -28,7 +29,7 @@ const sectionTitle: React.CSSProperties = {
 export default async function StockPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
-  const [liveInfo, newsRaw, insiders, disclosures, earningsItems] = await Promise.all([
+  const [liveInfo, newsRaw, insiders, disclosures, earnings] = await Promise.all([
     fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() as Promise<StockInfo | null> : null)
       .catch(() => null),
@@ -42,13 +43,14 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
       .then(r => r.ok ? r.json() as Promise<NewsItem[]> : [])
       .catch(() => [] as NewsItem[]),
     fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}/earnings`, { cache: 'no-store' })
-      .then(r => r.ok ? r.json() as Promise<NewsItem[]> : [])
-      .catch(() => [] as NewsItem[]),
+      .then(r => r.ok ? r.json() as Promise<EarningsItem[]> : [])
+      .catch(() => [] as EarningsItem[]),
   ]);
 
+  // Merge news (excluding earnings, which go into a separate tab)
   const seen = new Set<string>();
   const news: NewsItem[] = [];
-  for (const item of [...newsRaw, ...insiders, ...disclosures, ...earningsItems]) {
+  for (const item of [...newsRaw, ...insiders, ...disclosures]) {
     const key = item.title.toLowerCase().slice(0, 60);
     if (!seen.has(key)) { seen.add(key); news.push(item); }
   }
@@ -58,6 +60,7 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
   const name = liveInfo?.name ?? ticker.toUpperCase();
   const changePct = liveInfo?.changePct ?? null;
   const isUp = (changePct ?? 0) >= 0;
+  const hasContent = news.length > 0 || earnings.length > 0;
 
   return (
     <div style={{ minHeight: "100vh", position: "relative" }}>
@@ -112,17 +115,17 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
             </div>
 
             {/* Main layout */}
-            <div style={{ display: "grid", gridTemplateColumns: news.length > 0 ? "1fr 360px" : "1fr", gap: 24, alignItems: "stretch" }}>
+            <div style={{ display: "grid", gridTemplateColumns: hasContent ? "1fr 360px" : "1fr", gap: 24, alignItems: "stretch" }}>
               {/* Chart */}
               <div style={card}>
                 <div style={sectionTitle}>Price & Volume</div>
                 <StockChart ticker={ticker.toUpperCase()} initialIsUp={isUp} />
               </div>
 
-              {/* News sidebar */}
-              {news.length > 0 && (
+              {/* News + Earnings sidebar */}
+              {hasContent && (
                 <div style={{ ...card, display: "flex", flexDirection: "column" }}>
-                  <NewsCard news={news} />
+                  <NewsCard news={news} earnings={earnings} />
                 </div>
               )}
             </div>

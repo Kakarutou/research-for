@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { NewsItem } from '../news/route';
 
 const UA = 'research-for wjddlswjs7398@gmail.com';
 const cikCache: Record<string, number | null> = {};
+
+export interface EarningsItem {
+  quarter: string;           // "Q1 2026"
+  revenue: string | null;    // "$678M"
+  revenueYoY: string | null; // "+2%"
+  eps: string | null;        // "$0.03"
+  netIncome: string | null;  // "$8M"
+  opProfit: string | null;   // Non-GAAP operating profit
+  ceoQuote: string | null;
+  guidance: string | null;
+  publishedAt: number;
+  url: string;
+}
 
 async function getCik(ticker: string): Promise<number | null> {
   if (ticker in cikCache) return cikCache[ticker];
@@ -38,7 +50,6 @@ async function getExhibit991Url(cik: number, accn: string): Promise<string | nul
     );
     if (!res.ok) return null;
     const html = await res.text();
-    // Match EX-99.1 document row, get first .htm (skip .xml)
     const match = html.match(/EX-99\.1[\s\S]*?href="(\/Archives[^"]+\.htm[l]?)"/i);
     return match ? `https://www.sec.gov${match[1]}` : null;
   } catch {
@@ -65,102 +76,75 @@ function stripHtml(html: string): string {
     .trim();
 }
 
-interface ParsedEarnings {
-  revenue: string | null;
-  eps: string | null;
-  quarter: string | null;
-  ceoQuotes: string[];
-  guidance: string | null;
-  headline: string | null;
+function fmtMoney(val: string, unit: string): string {
+  const n = parseFloat(val.replace(/,/g, ''));
+  const u = unit.toLowerCase().startsWith('b') ? 'B' : 'M';
+  return `$${Number.isInteger(n) ? n.toLocaleString() : n.toFixed(1)}${u}`;
 }
 
-function parseEarningsText(text: string): ParsedEarnings {
-  // Revenue: "$678 million" or "$1.2 billion"
-  const revMatch = text.match(/[Rr]evenue(?:\s+was|\s+of)?\s+\$?([\d,\.]+)\s*(billion|million|B\b|M\b)/i);
-  let revenue: string | null = null;
-  if (revMatch) {
-    const val = revMatch[1].replace(/,/g, '');
-    const unit = revMatch[2].toLowerCase().startsWith('b') ? 'B' : 'M';
-    revenue = `$${parseFloat(val) < 10 && unit === 'B' ? parseFloat(val).toFixed(1) : val}${unit}`;
-  }
+function parseYoY(text: string, fromIndex: number): string | null {
+  const nearby = text.slice(fromIndex, fromIndex + 400);
+  const m = nearby.match(/(increase|decrease|up|down)\s+(?:of\s+)?([\d\.]+)%/i);
+  if (!m) return null;
+  const isUp = /increase|up/i.test(m[1]);
+  return (isUp ? '+' : '-') + m[2] + '%';
+}
 
-  // EPS: "per diluted share was $0.03" or "loss per diluted share of $(0.31)"
-  const epsMatch = text.match(/(?:earnings|loss)\s+per\s+(?:diluted\s+)?share[s]?(?:\s+was|\s+of)?\s+\$?\(?([\d\.]+)\)?/i);
-  const eps = epsMatch ? `$${epsMatch[1]}` : null;
-
-  // Quarter from text like "first quarter 2026" or "third quarter ended September"
+function parseEarnings(text: string, fallbackQuarter: string): Omit<EarningsItem, 'publishedAt' | 'url'> {
+  // Quarter
   const qMap: Record<string, string> = { first: 'Q1', second: 'Q2', third: 'Q3', fourth: 'Q4' };
-  const quarterMatch = text.match(/(first|second|third|fourth)\s+quarter(?:\s+(?:of\s+)?(\d{4}))?/i);
-  let quarter: string | null = null;
-  if (quarterMatch) {
-    const q = qMap[quarterMatch[1].toLowerCase()] ?? '';
-    const yr = quarterMatch[2] ?? '';
-    quarter = yr ? `${q} ${yr}` : q;
+  const qm = text.match(/(first|second|third|fourth)\s+quarter(?:\s+(?:of\s+)?(\d{4}))?/i);
+  const quarter = qm
+    ? `${qMap[qm[1].toLowerCase()] ?? ''}${qm[2] ? ' ' + qm[2] : ''}`
+    : fallbackQuarter;
+
+  // Revenue
+  let revenue: string | null = null;
+  let revenueYoY: string | null = null;
+  const revM = text.match(/[Rr]evenue(?:\s+was|\s+of)?\s+\$([\d,\.]+)\s*(billion|million)/i);
+  if (revM) {
+    revenue = fmtMoney(revM[1], revM[2]);
+    revenueYoY = parseYoY(text, revM.index!);
   }
 
-  // Headline line (usually the first bullet point or first sentence with company name)
-  const headlineMatch = text.match(/(?:•\s*)([^•]{20,120}(?:Revenue|Results|Sales|Quarter)[^•]{0,60})/i);
-  const headline = headlineMatch ? headlineMatch[1].trim() : null;
-
-  // CEO / CFO quotes (after "stated," or "said," pattern)
-  const ceoQuotes: string[] = [];
-  const quoteRe = /(?:CEO|Chief Executive|CFO|Chief Financial|President|stated|said|commented),?\s+"([^"]{40,300})"/gi;
-  let m: RegExpExecArray | null;
-  while ((m = quoteRe.exec(text)) !== null && ceoQuotes.length < 2) {
-    const q = m[1].trim();
-    if (!ceoQuotes.some(existing => existing.slice(0, 30) === q.slice(0, 30))) {
-      ceoQuotes.push(q);
-    }
+  // EPS (diluted)
+  let eps: string | null = null;
+  const epsM = text.match(/(?:earnings|income|loss)\s+per\s+(?:diluted\s+)?share[s]?(?:\s+was|\s+of|:)?\s+\$\(?([\d\.]+)\)?/i);
+  if (epsM) {
+    // Check if it's a loss (surrounded by parens in original)
+    const ctxBefore = text.slice(Math.max(0, (epsM.index ?? 0) - 30), epsM.index ?? 0);
+    const isLoss = /[Ll]oss/.test(ctxBefore + epsM[0].slice(0, 20));
+    eps = (isLoss && !epsM[0].includes('earnings per')) ? `-$${epsM[1]}` : `$${epsM[1]}`;
   }
 
-  // Guidance: look for "full year" or "second quarter" guidance/outlook sentences
-  const guidanceMatch = text.match(/[Ff]ull.?[Yy]ear\s+(?:\d{4}\s+)?(?:[Gg]uidance|[Oo]utlook)[^.]{0,200}\./);
-  const guidance = guidanceMatch ? guidanceMatch[0].trim() : null;
-
-  return { revenue, eps, quarter, ceoQuotes, guidance, headline };
-}
-
-function buildItems(
-  ticker: string,
-  quarter: string,
-  parsed: ParsedEarnings,
-  publishedAt: number,
-  url: string,
-): NewsItem[] {
-  const items: NewsItem[] = [];
-  const src = 'SEC 실적발표';
-
-  // Main earnings headline
-  let mainTitle = `[${ticker}] ${quarter} Earnings Call`;
-  const metrics: string[] = [];
-  if (parsed.revenue) metrics.push(`Revenue ${parsed.revenue}`);
-  if (parsed.eps) metrics.push(`EPS ${parsed.eps}`);
-  if (metrics.length > 0) mainTitle += ` — ${metrics.join(', ')}`;
-  items.push({ title: mainTitle, source: src, publishedAt, url });
-
-  // CEO quotes
-  for (const [i, quote] of parsed.ceoQuotes.entries()) {
-    const shortQuote = quote.length > 120 ? quote.slice(0, 117) + '...' : quote;
-    items.push({
-      title: `[${ticker}] ${quarter} 어닝콜 경영진 코멘트: "${shortQuote}"`,
-      source: src,
-      publishedAt: publishedAt - i,  // slight offset to keep order
-      url,
-    });
+  // Net income / loss
+  let netIncome: string | null = null;
+  const niM = text.match(/[Nn]et\s+(income|loss)(?:\s+was|\s+of)?\s+\$?\(?([\d,\.]+)\)?\s*(billion|million)/i);
+  if (niM) {
+    const sign = niM[1].toLowerCase() === 'loss' ? '-' : '';
+    netIncome = `${sign}${fmtMoney(niM[2], niM[3])}`;
   }
 
-  // Guidance
-  if (parsed.guidance) {
-    const shortGuide = parsed.guidance.length > 140 ? parsed.guidance.slice(0, 137) + '...' : parsed.guidance;
-    items.push({
-      title: `[${ticker}] ${quarter} guidance — ${shortGuide}`,
-      source: src,
-      publishedAt: publishedAt - 10,
-      url,
-    });
+  // Non-GAAP operating profit
+  let opProfit: string | null = null;
+  const opM = text.match(/[Nn]on-GAAP\s+[Oo]perating\s+[Pp]rofit(?:\s+was|\s+of)?\s+\$([\d,\.]+)\s*(billion|million)/i);
+  if (opM) opProfit = fmtMoney(opM[1], opM[2]);
+
+  // CEO / CFO quote — first substantive quote after "stated" or name of exec
+  let ceoQuote: string | null = null;
+  const quoteRe = /(?:stated|said|commented)[,:]?\s+"([^"]{50,400})"/gi;
+  const qResult = quoteRe.exec(text);
+  if (qResult) ceoQuote = qResult[1].trim();
+
+  // Guidance — next quarter or full year
+  let guidance: string | null = null;
+  const guidM = text.match(/[Ff]or (?:the\s+)?(?:second|third|fourth|full\s+year|fiscal)[^.]{0,300}(?:expects?|projects?|anticipates?)[^.]{0,200}\./i);
+  if (guidM) {
+    const g = guidM[0].trim();
+    guidance = g.length > 200 ? g.slice(0, 197) + '...' : g;
   }
 
-  return items;
+  return { quarter, revenue, revenueYoY, eps, netIncome, opProfit, ceoQuote, guidance };
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
@@ -179,51 +163,49 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
 
     const data = await subRes.json();
     const recent = data.filings?.recent ?? {};
-    const forms: string[] = recent.form ?? [];
-    const dates: string[] = recent.filingDate ?? [];
-    const accns: string[] = recent.accessionNumber ?? [];
-    const itemCodes: string[] = recent.items ?? [];
+    const forms: string[]     = recent.form             ?? [];
+    const dates: string[]     = recent.filingDate        ?? [];
+    const accns: string[]     = recent.accessionNumber   ?? [];
+    const itemCodes: string[] = recent.items             ?? [];
 
-    // Collect earnings 8-K filings (item 2.02 = Results of Operations)
+    // 2-year cutoff
+    const cutoff = Math.floor(Date.now() / 1000) - 2 * 365 * 24 * 3600;
+
     const earningsFilings: { date: string; accn: string }[] = [];
-    for (let i = 0; i < forms.length && earningsFilings.length < 6; i++) {
-      if (forms[i] === '8-K' && (itemCodes[i] ?? '').includes('2.02')) {
-        earningsFilings.push({ date: dates[i], accn: accns[i] });
-      }
+    for (let i = 0; i < forms.length && earningsFilings.length < 8; i++) {
+      if (forms[i] !== '8-K') continue;
+      if (!(itemCodes[i] ?? '').includes('2.02')) continue;
+      const ts = dates[i] ? Math.floor(new Date(dates[i]).getTime() / 1000) : 0;
+      if (ts < cutoff) break; // filings are sorted newest-first; stop early
+      earningsFilings.push({ date: dates[i], accn: accns[i] });
     }
 
     if (earningsFilings.length === 0) return NextResponse.json([]);
 
-    // Fetch and parse each earnings press release
-    const allItems = await Promise.all(
-      earningsFilings.map(async ({ date, accn }) => {
-        const quarter = quarterLabel(date);
+    const results: EarningsItem[] = await Promise.all(
+      earningsFilings.map(async ({ date, accn }): Promise<EarningsItem> => {
+        const fallbackQuarter = quarterLabel(date);
         const publishedAt = date ? Math.floor(new Date(date).getTime() / 1000) : 0;
         const fallbackUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=8-K&dateb=&owner=include&count=10`;
 
         try {
           const ex991Url = await getExhibit991Url(cik, accn);
           if (!ex991Url) {
-            return [{ title: `[${ticker.toUpperCase()}] ${quarter} Earnings Call`, source: 'SEC 실적발표', publishedAt, url: fallbackUrl }];
+            return { quarter: fallbackQuarter, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
           }
-
           const htmlRes = await fetch(ex991Url, { headers: { 'User-Agent': UA }, cache: 'no-store' });
           if (!htmlRes.ok) {
-            return [{ title: `[${ticker.toUpperCase()}] ${quarter} Earnings Call`, source: 'SEC 실적발표', publishedAt, url: fallbackUrl }];
+            return { quarter: fallbackQuarter, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
           }
-
           const text = stripHtml(await htmlRes.text());
-          const parsed = parseEarningsText(text);
-          const effectiveQuarter = parsed.quarter ?? quarter;
-
-          return buildItems(ticker.toUpperCase(), effectiveQuarter, parsed, publishedAt, ex991Url);
+          return { ...parseEarnings(text, fallbackQuarter), publishedAt, url: ex991Url };
         } catch {
-          return [{ title: `[${ticker.toUpperCase()}] ${quarter} Earnings Call`, source: 'SEC 실적발표', publishedAt, url: fallbackUrl }];
+          return { quarter: fallbackQuarter, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
         }
       })
     );
 
-    return NextResponse.json(allItems.flat());
+    return NextResponse.json(results);
   } catch {
     return NextResponse.json([]);
   }
