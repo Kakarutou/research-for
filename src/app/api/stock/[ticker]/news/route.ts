@@ -112,6 +112,27 @@ async function fetchFinnhub(ticker: string): Promise<NewsItem[]> {
   } catch { return []; }
 }
 
+// ── Stock Titan RSS (near real-time press releases) ───────────────────────────
+async function fetchStockTitan(ticker: string): Promise<NewsItem[]> {
+  try {
+    const res = await fetch(
+      `https://www.stocktitan.net/rss/news/${encodeURIComponent(ticker)}`,
+      { headers: { 'User-Agent': UA }, cache: 'no-store' },
+    );
+    if (!res.ok) return [];
+    const xml = await res.text();
+    if (!xml.includes('<item>')) return [];
+    return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 20).map(([, b]) => {
+      const plain = (tag: string) => b.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]>`))?.[1]?.trim()
+                                  ?? b.match(new RegExp(`<${tag}[^>]*>([^<]*)<`))?.[1]?.trim() ?? '';
+      const title       = plain('title').replace(/\s*\|\s*[A-Z]+ Stock News\s*$/, '').trim();
+      const url         = plain('link') || plain('guid');
+      const publishedAt = plain('pubDate') ? Math.floor(new Date(plain('pubDate')).getTime() / 1000) : 0;
+      return { title, source: 'Stock Titan', publishedAt, url } satisfies NewsItem;
+    }).filter(n => n.title && n.url);
+  } catch { return []; }
+}
+
 // ── GlobeNewswire RSS ─────────────────────────────────────────────────────────
 async function fetchGlobeNewswire(ticker: string): Promise<NewsItem[]> {
   try {
@@ -138,14 +159,19 @@ async function fetchGlobeNewswire(ticker: string): Promise<NewsItem[]> {
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
-  const [keywords, finnhub, globe] = await Promise.all([
+  const [keywords, finnhub, globe, stocktitan] = await Promise.all([
     getCompanyKeywords(ticker),
     fetchFinnhub(ticker),
     fetchGlobeNewswire(ticker),
+    fetchStockTitan(ticker),
   ]);
 
-  // 1) 관련성 필터
-  const relevant = [...finnhub, ...globe].filter(item => isRelevant(item, keywords));
+  // 1) 관련성 필터 — Stock Titan은 티커 피드이므로 항상 관련
+  const relevant = [
+    ...finnhub.filter(item => isRelevant(item, keywords)),
+    ...globe,          // GlobeNewswire: already ticker-filtered
+    ...stocktitan,     // Stock Titan: per-ticker RSS, always relevant
+  ];
 
   // 2) 중복 제거 (날짜순 정렬 후, 유사도 높은 이후 기사 제거)
   relevant.sort((a, b) => b.publishedAt - a.publishedAt);
