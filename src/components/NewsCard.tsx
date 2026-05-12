@@ -4,8 +4,8 @@ import { createPortal } from "react-dom";
 import type { NewsItem } from "@/app/api/stock/[ticker]/news/route";
 import type { EarningsItem } from "@/app/api/stock/[ticker]/earnings/route";
 
-type Tab = "호재" | "악재" | "공시" | "어닝콜";
-const TABS: Tab[] = ["호재", "악재", "공시", "어닝콜"];
+type Tab = "뉴스" | "악재" | "공시" | "어닝콜";
+const TABS: Tab[] = ["뉴스", "악재", "공시", "어닝콜"];
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -19,6 +19,9 @@ function relTime(ts: number): string {
 }
 
 function classify(item: NewsItem): Tab {
+  // SEC EDGAR 공시는 항상 공시 탭
+  if (item.source === 'SEC EDGAR') return "공시";
+
   const t = (item.title + " " + item.source).toLowerCase();
 
   const earningsKw = [
@@ -49,7 +52,7 @@ function classify(item: NewsItem): Tab {
     "purchases shares","bought shares",
     "내부자 매수","사내이사 매수","임원 주식 매수","임원 매수","대주주 매수",
   ];
-  if (insiderBuyKw.some(w => t.includes(w))) return "호재";
+  if (insiderBuyKw.some(w => t.includes(w))) return "뉴스";
 
   const discKw = [
     "sec filing","10-k","10-q","8-k","proxy statement","ipo",
@@ -179,7 +182,7 @@ function classify(item: NewsItem): Tab {
 
   const pos = posKw.filter(w => t.includes(w)).length;
   const neg = negKw.filter(w => t.includes(w)).length;
-  return neg > pos ? "악재" : "호재";
+  return neg > pos ? "악재" : "뉴스";
 }
 
 // ── Preview modal ─────────────────────────────────────────────────────────────
@@ -517,7 +520,7 @@ function EarningsCard({
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function NewsCard({ news, earnings = [] }: { news: NewsItem[]; earnings?: EarningsItem[] }) {
-  const [tab, setTab]           = useState<Tab>("호재");
+  const [tab, setTab]           = useState<Tab>("뉴스");
   const [expanded, setExpanded] = useState(false);
   const [preview, setPreview]   = useState<PreviewTarget | null>(null);
 
@@ -526,7 +529,7 @@ export default function NewsCard({ news, earnings = [] }: { news: NewsItem[]; ea
   const closePreview = useCallback(() => setPreview(null), []);
 
   const cats = useMemo(() => {
-    const r: Record<Tab, NewsItem[]> = { 호재: [], 악재: [], 공시: [], 어닝콜: [] };
+    const r: Record<Tab, NewsItem[]> = { 뉴스: [], 악재: [], 공시: [], 어닝콜: [] };
     for (const n of news) r[classify(n)].push(n);
     return r;
   }, [news]);
@@ -616,7 +619,7 @@ export default function NewsCard({ news, earnings = [] }: { news: NewsItem[]; ea
             <>
               <div style={{ position: "absolute", inset: 0, overflowY: expanded ? "auto" : "hidden" }}>
                 {newsItems.length === 0
-                  ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--gray-400)", fontFamily: "monospace", fontSize: 12 }}>관련 {tab} 뉴스 없음</div>
+                  ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--gray-400)", fontFamily: "monospace", fontSize: 12 }}>{tab === "뉴스" ? "관련 뉴스 없음" : `관련 ${tab} 없음`}</div>
                   : newsItems.map((n, i) => (
                     <div
                       key={i}
