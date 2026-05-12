@@ -10,6 +10,30 @@ export interface NewsItem {
 }
 
 const FINNHUB_KEY = process.env.FINNHUB_KEY ?? process.env.FINNHUB_API_KEY ?? '';
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+
+async function fetchGlobeNewswire(ticker: string): Promise<NewsItem[]> {
+  try {
+    const res = await fetch(
+      `https://www.globenewswire.com/RssFeed/keyword/${encodeURIComponent(ticker)}`,
+      { headers: { 'User-Agent': UA }, cache: 'no-store' },
+    );
+    if (!res.ok) return [];
+    const xml = await res.text();
+    const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+    return items.slice(0, 15).map(([, b]) => {
+      const cdata = (tag: string) => b.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]>`))?.[1]?.trim() ?? '';
+      const plain = (tag: string) => b.match(new RegExp(`<${tag}[^>]*>([^<]*)<`))?.[1]?.trim() ?? '';
+      const title      = cdata('title') || plain('title');
+      const url        = plain('link')  || plain('guid');
+      const pubDateStr = plain('pubDate');
+      const publishedAt = pubDateStr ? Math.floor(new Date(pubDateStr).getTime() / 1000) : 0;
+      const rawDesc    = cdata('description');
+      const summary    = rawDesc ? rawDesc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300) || undefined : undefined;
+      return { title, source: 'GlobeNewswire', publishedAt, url, summary } satisfies NewsItem;
+    }).filter(n => n.title && n.url);
+  } catch { return []; }
+}
 
 async function fetchFinnhub(ticker: string): Promise<NewsItem[]> {
   if (!FINNHUB_KEY) return [];
@@ -45,6 +69,19 @@ async function fetchFinnhub(ticker: string): Promise<NewsItem[]> {
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
-  const news = await fetchFinnhub(ticker);
-  return NextResponse.json(news);
+
+  const [finnhub, globe] = await Promise.all([
+    fetchFinnhub(ticker),
+    fetchGlobeNewswire(ticker),
+  ]);
+
+  const seen = new Set<string>();
+  const all: NewsItem[] = [];
+  for (const item of [...finnhub, ...globe]) {
+    const key = item.title.toLowerCase().slice(0, 60);
+    if (!seen.has(key)) { seen.add(key); all.push(item); }
+  }
+  all.sort((a, b) => b.publishedAt - a.publishedAt);
+
+  return NextResponse.json(all);
 }
