@@ -1,5 +1,6 @@
 "use client";
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import type { NewsItem } from "@/app/api/stock/[ticker]/news/route";
 import type { EarningsItem } from "@/app/api/stock/[ticker]/earnings/route";
 
@@ -229,7 +230,7 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
   const e = isEarnings ? (target.item as EarningsItem) : null;
   const n = isNews     ? (target.item as NewsItem)     : null;
 
-  return (
+  return createPortal(
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, zIndex: 1000,
       background: "rgba(0,0,0,0.4)", backdropFilter: "blur(6px)",
@@ -392,7 +393,8 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
           </a>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
