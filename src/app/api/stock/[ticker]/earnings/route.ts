@@ -5,6 +5,7 @@ const cikCache: Record<string, number | null> = {};
 
 export interface EarningsItem {
   quarter: string;           // "Q1 2026"
+  headline: string | null;   // "Reports First Quarter 2026 Results"
   revenue: string | null;    // "$678M"
   revenueYoY: string | null; // "+2%"
   eps: string | null;        // "$0.03"
@@ -98,6 +99,22 @@ function parseEarnings(text: string, fallbackQuarter: string): Omit<EarningsItem
     ? `${qMap[qm[1].toLowerCase()] ?? ''}${qm[2] ? ' ' + qm[2] : ''}`
     : fallbackQuarter;
 
+  // Headline: text between last "Exhibit 99.1" and first bullet "•"
+  let headline: string | null = null;
+  const exIdx = text.lastIndexOf('Exhibit 99.1');
+  const bulletIdx = text.indexOf('•');
+  if (exIdx !== -1 && bulletIdx > exIdx) {
+    const between = text.slice(exIdx + 'Exhibit 99.1'.length, bulletIdx).trim();
+    // Strip leading "DocumentExhibit 99.1" artifacts and take meaningful sentence
+    const cleaned = between.replace(/^[Dd]ocument\s*/i, '').trim();
+    if (cleaned.length > 10 && cleaned.length < 200) headline = cleaned;
+  }
+  // Fallback: look for "Reports ... Results" pattern
+  if (!headline) {
+    const m = text.match(/[A-Z][A-Za-z\s,]+(?:Reports?|Announces?)[^.]{10,120}(?:Results?|Earnings)[^.]*/i);
+    if (m) headline = m[0].trim();
+  }
+
   // Revenue
   let revenue: string | null = null;
   let revenueYoY: string | null = null;
@@ -144,7 +161,7 @@ function parseEarnings(text: string, fallbackQuarter: string): Omit<EarningsItem
     guidance = g.length > 200 ? g.slice(0, 197) + '...' : g;
   }
 
-  return { quarter, revenue, revenueYoY, eps, netIncome, opProfit, ceoQuote, guidance };
+  return { quarter, headline, revenue, revenueYoY, eps, netIncome, opProfit, ceoQuote, guidance };
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
@@ -191,16 +208,16 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
         try {
           const ex991Url = await getExhibit991Url(cik, accn);
           if (!ex991Url) {
-            return { quarter: fallbackQuarter, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
+            return { quarter: fallbackQuarter, headline: null, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
           }
           const htmlRes = await fetch(ex991Url, { headers: { 'User-Agent': UA }, cache: 'no-store' });
           if (!htmlRes.ok) {
-            return { quarter: fallbackQuarter, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
+            return { quarter: fallbackQuarter, headline: null, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
           }
           const text = stripHtml(await htmlRes.text());
           return { ...parseEarnings(text, fallbackQuarter), publishedAt, url: ex991Url };
         } catch {
-          return { quarter: fallbackQuarter, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
+          return { quarter: fallbackQuarter, headline: null, revenue: null, revenueYoY: null, eps: null, netIncome: null, opProfit: null, ceoQuote: null, guidance: null, publishedAt, url: fallbackUrl };
         }
       })
     );

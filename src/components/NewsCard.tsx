@@ -232,6 +232,13 @@ function EarningsCard({ e, isLast }: { e: EarningsItem; isLast: boolean }) {
         </a>
       </div>
 
+      {/* Title */}
+      {e.headline && (
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gray-800)", lineHeight: 1.4, marginBottom: 10 }}>
+          {e.headline}
+        </div>
+      )}
+
       {/* Metrics grid */}
       {(e.revenue || e.eps || e.netIncome || e.opProfit) && (
         <div style={{
@@ -409,8 +416,8 @@ export default function NewsCard({ news, earnings = [] }: { news: NewsItem[]; ea
                 </div>
               )
               : earnings.map((e, i) => (
-                <EarningsCard key={i} e={e} isLast={i === earnings.length - 1} />
-              ))
+                  <EarningsCard key={i} e={e} isLast={i === earnings.length - 1} />
+                ))
             }
           </div>
         )}
