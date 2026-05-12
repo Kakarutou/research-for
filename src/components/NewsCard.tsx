@@ -206,159 +206,143 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
 
   const isNews     = target.kind === "news";
   const isEarnings = target.kind === "earnings";
-  const url        = isNews ? target.item.url : target.item.url;
+  const url        = target.item.url;
   const source     = isNews ? target.item.source : "SEC 실적발표";
-  const ts         = isNews ? target.item.publishedAt : target.item.publishedAt;
+  const ts         = target.item.publishedAt;
 
-  // Fetch summary only for news items
   useEffect(() => {
     if (!isNews || !url) return;
     setLoading(true); setSummary(null); setFetchErr(false);
     fetch(`/api/preview?url=${encodeURIComponent(url)}`)
       .then(r => r.json())
-      .then(d => {
-        if (d.summary) setSummary(d.summary);
-        else setFetchErr(true);
-      })
+      .then(d => { if (d.summary) setSummary(d.summary); else setFetchErr(true); })
       .catch(() => setFetchErr(true))
       .finally(() => setLoading(false));
   }, [url, isNews]);
 
-  // ESC to close
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  const e = isEarnings ? target.item : null;
-  const n = isNews     ? target.item : null;
+  const e = isEarnings ? (target.item as EarningsItem) : null;
+  const n = isNews     ? (target.item as NewsItem)     : null;
 
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 2000,
-        background: "rgba(0,0,0,0.45)",
-        backdropFilter: "blur(6px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "20px",
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          width: "100%", maxWidth: 500,
-          background: "rgba(255,255,255,0.97)",
-          borderRadius: 18,
-          boxShadow: "0 16px 60px rgba(0,0,0,0.22)",
-          maxHeight: "80vh",
-          display: "flex", flexDirection: "column",
-          overflow: "hidden",
-        }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "16px 20px 14px",
-          borderBottom: "1px solid rgba(0,0,0,0.07)",
-          flexShrink: 0,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontFamily: "monospace", fontSize: 11, fontWeight: 700, color: "var(--gray-500)", letterSpacing: "0.04em" }}>
-              {source.toUpperCase()}
-            </span>
-            <span style={{ fontFamily: "monospace", fontSize: 11, color: "var(--gray-400)" }}>
-              · {relTime(ts)}
-            </span>
-          </div>
-          <button
-            onClick={onClose}
-            style={{
-              background: "rgba(0,0,0,0.06)", border: "none", borderRadius: "50%",
-              width: 28, height: 28, cursor: "pointer", display: "flex",
-              alignItems: "center", justifyContent: "center",
-              fontSize: 16, color: "var(--gray-500)",
-            }}
-          >×</button>
-        </div>
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, zIndex: 1000,
+      background: "rgba(0,0,0,0.4)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+    }}>
+      <div onClick={ev => ev.stopPropagation()} style={{
+        background: "white", borderRadius: 20, width: "100%", maxWidth: 400,
+        boxShadow: "0 24px 80px rgba(0,0,0,0.18)", overflow: "hidden",
+        maxHeight: "85vh", display: "flex", flexDirection: "column",
+      }}>
 
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
-
-          {/* ── News item ── */}
-          {n && (
-            <>
+        {/* ── Header ── */}
+        <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid #f4f4f5", flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              {/* Source chip */}
               <div style={{
-                fontSize: 15, fontWeight: 700, color: "#18181b",
-                lineHeight: 1.45, marginBottom: 16,
+                display: "inline-flex", alignItems: "center", gap: 5,
+                background: "#f4f4f5", borderRadius: 6, padding: "3px 8px",
+                fontFamily: "var(--font-mono), monospace", fontSize: 10,
+                fontWeight: 700, color: "#71717a", letterSpacing: "0.04em",
+                marginBottom: 8,
               }}>
-                {n.title}
+                {source.toUpperCase()}
+                <span style={{ color: "#d4d4d8" }}>·</span>
+                {relTime(ts)}
               </div>
 
+              {/* Title / Quarter */}
+              {n && (
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#18181b", lineHeight: 1.4, paddingRight: 8 }}>
+                  {n.title}
+                </div>
+              )}
+              {e && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{
+                    fontFamily: "var(--font-mono), monospace", fontSize: 13, fontWeight: 800,
+                    background: "#18181b", color: "white", borderRadius: 6, padding: "3px 10px",
+                  }}>{e.quarter}</span>
+                  {e.headline && (
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#3f3f46", lineHeight: 1.3 }}>
+                      {e.headline}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Close */}
+            <button onClick={onClose} style={{
+              flexShrink: 0, marginLeft: 8,
+              width: 28, height: 28, borderRadius: "50%",
+              background: "#f4f4f5", border: "none", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 15, color: "#71717a",
+            }}>×</button>
+          </div>
+        </div>
+
+        {/* ── Body ── */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+
+          {/* News summary */}
+          {n && (
+            <>
               {loading && (
-                <div style={{ color: "var(--gray-400)", fontFamily: "monospace", fontSize: 12, padding: "20px 0" }}>
-                  내용 불러오는 중...
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", fontSize: 12, padding: "12px 0" }}>
+                  <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span>
+                  불러오는 중...
                 </div>
               )}
               {!loading && summary && (
-                <div style={{
-                  fontSize: 13, color: "var(--gray-700)", lineHeight: 1.7,
-                  whiteSpace: "pre-wrap",
-                }}>
+                <div style={{ fontSize: 13, color: "#3f3f46", lineHeight: 1.75, whiteSpace: "pre-wrap" }}>
                   {summary}
                 </div>
               )}
               {!loading && fetchErr && (
-                <div style={{ color: "var(--gray-400)", fontFamily: "monospace", fontSize: 12, padding: "20px 0" }}>
-                  원문 미리보기를 불러올 수 없습니다.
+                <div style={{ color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", fontSize: 12, padding: "12px 0" }}>
+                  미리보기를 불러올 수 없습니다.
                 </div>
               )}
             </>
           )}
 
-          {/* ── Earnings item ── */}
+          {/* Earnings detail */}
           {e && (
-            <>
-              {/* Quarter badge + headline */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                <span style={{
-                  fontFamily: "monospace", fontSize: 12, fontWeight: 800,
-                  background: "#18181b", color: "white",
-                  borderRadius: 5, padding: "2px 8px",
-                }}>{e.quarter}</span>
-              </div>
-              {e.headline && (
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#18181b", lineHeight: 1.45, marginBottom: 16 }}>
-                  {e.headline}
-                </div>
-              )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-              {/* Metrics */}
+              {/* Metrics row */}
               {(e.revenue || e.eps || e.netIncome || e.opProfit) && (
                 <div style={{
                   display: "grid",
                   gridTemplateColumns: `repeat(${[e.revenue, e.eps, e.netIncome || e.opProfit].filter(Boolean).length}, 1fr)`,
-                  gap: 8, marginBottom: 16,
-                  background: "rgba(0,0,0,0.03)", borderRadius: 10, padding: "12px 14px",
+                  gap: 1, background: "#f4f4f5", borderRadius: 12, overflow: "hidden",
                 }}>
                   {e.revenue && (
-                    <div>
-                      <div style={{ fontSize: 10, color: "var(--gray-500)", marginBottom: 3, fontFamily: "monospace" }}>REVENUE</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: "#18181b", fontFamily: "monospace", marginBottom: 2 }}>{e.revenue}</div>
+                    <div style={{ background: "white", padding: "12px 14px" }}>
+                      <div style={{ fontSize: 10, color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", marginBottom: 4 }}>매출</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: "#18181b", fontFamily: "var(--font-mono), monospace" }}>{e.revenue}</div>
                       {e.revenueYoY && <YoY val={e.revenueYoY} />}
                     </div>
                   )}
                   {e.eps && (
-                    <div>
-                      <div style={{ fontSize: 10, color: "var(--gray-500)", marginBottom: 3, fontFamily: "monospace" }}>EPS</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: "#18181b", fontFamily: "monospace" }}>{e.eps}</div>
+                    <div style={{ background: "white", padding: "12px 14px" }}>
+                      <div style={{ fontSize: 10, color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", marginBottom: 4 }}>EPS</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: "#18181b", fontFamily: "var(--font-mono), monospace" }}>{e.eps}</div>
                     </div>
                   )}
                   {(e.netIncome || e.opProfit) && (
-                    <div>
-                      <div style={{ fontSize: 10, color: "var(--gray-500)", marginBottom: 3, fontFamily: "monospace" }}>{e.opProfit ? "OP PROFIT" : "NET INC"}</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: "#18181b", fontFamily: "monospace" }}>{e.opProfit ?? e.netIncome}</div>
+                    <div style={{ background: "white", padding: "12px 14px" }}>
+                      <div style={{ fontSize: 10, color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", marginBottom: 4 }}>{e.opProfit ? "영업이익" : "순이익"}</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: "#18181b", fontFamily: "var(--font-mono), monospace" }}>{e.opProfit ?? e.netIncome}</div>
                     </div>
                   )}
                 </div>
@@ -367,56 +351,46 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
               {/* CEO quote */}
               {e.ceoQuote && (
                 <div style={{
-                  fontSize: 13, color: "var(--gray-600)", lineHeight: 1.65,
-                  fontStyle: "italic", marginBottom: e.guidance ? 14 : 0,
+                  background: "#fafafa", borderRadius: 10, padding: "14px 16px",
+                  borderLeft: "3px solid #e4e4e7",
                 }}>
-                  <span style={{ color: "var(--gray-400)" }}>"</span>
-                  {e.ceoQuote}
-                  <span style={{ color: "var(--gray-400)" }}>"</span>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", marginBottom: 8, letterSpacing: "0.05em" }}>CEO 코멘트</div>
+                  <div style={{ fontSize: 13, color: "#3f3f46", lineHeight: 1.7, fontStyle: "italic" }}>
+                    "{e.ceoQuote}"
+                  </div>
                 </div>
               )}
 
               {/* Guidance */}
               {e.guidance && (
                 <div style={{
-                  fontSize: 12, color: "var(--gray-600)", lineHeight: 1.6,
-                  background: "rgba(99,102,241,0.06)",
-                  borderLeft: "2px solid rgba(99,102,241,0.35)",
-                  borderRadius: "0 6px 6px 0",
-                  padding: "8px 12px",
+                  background: "rgba(99,102,241,0.05)", borderRadius: 10, padding: "14px 16px",
+                  borderLeft: "3px solid rgba(99,102,241,0.4)",
                 }}>
-                  <span style={{ fontWeight: 700, color: "rgba(99,102,241,0.85)", marginRight: 6, fontStyle: "normal" }}>가이던스</span>
-                  {e.guidance}
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "rgba(99,102,241,0.7)", fontFamily: "var(--font-mono), monospace", marginBottom: 8, letterSpacing: "0.05em" }}>가이던스</div>
+                  <div style={{ fontSize: 13, color: "#3f3f46", lineHeight: 1.7 }}>{e.guidance}</div>
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
 
-        {/* Footer — original link */}
-        {url && (
-          <div style={{
-            padding: "14px 20px",
-            borderTop: "1px solid rgba(0,0,0,0.07)",
-            flexShrink: 0,
-          }}>
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                width: "100%", padding: "10px 0",
-                background: "#18181b", color: "white",
-                borderRadius: 10, textDecoration: "none",
-                fontFamily: "var(--font-sans), sans-serif",
-                fontSize: 13, fontWeight: 600, letterSpacing: "-0.01em",
-              }}
-            >
-              원문 보기 →
-            </a>
-          </div>
-        )}
+        {/* ── Footer ── */}
+        <div style={{ padding: "12px 20px 20px", borderTop: "1px solid #f4f4f5", flexShrink: 0 }}>
+          <a
+            href={url} target="_blank" rel="noopener noreferrer"
+            style={{
+              display: "block", textAlign: "center",
+              padding: "12px 0", borderRadius: 12,
+              background: "#18181b", color: "white",
+              fontFamily: "var(--font-sans), sans-serif",
+              fontSize: 14, fontWeight: 600, textDecoration: "none",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            원문 보기
+          </a>
+        </div>
       </div>
     </div>
   );
