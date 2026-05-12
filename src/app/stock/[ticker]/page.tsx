@@ -28,14 +28,31 @@ const sectionTitle: React.CSSProperties = {
 export default async function StockPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
-  const [liveInfo, news] = await Promise.all([
+  const [liveInfo, newsRaw, insiders, disclosures, earningsItems] = await Promise.all([
     fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() as Promise<StockInfo | null> : null)
       .catch(() => null),
     fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}/news`, { cache: 'no-store' })
       .then(r => r.ok ? r.json() as Promise<NewsItem[]> : [])
       .catch(() => [] as NewsItem[]),
+    fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}/insiders`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() as Promise<NewsItem[]> : [])
+      .catch(() => [] as NewsItem[]),
+    fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}/disclosures`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() as Promise<NewsItem[]> : [])
+      .catch(() => [] as NewsItem[]),
+    fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}/earnings`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() as Promise<NewsItem[]> : [])
+      .catch(() => [] as NewsItem[]),
   ]);
+
+  const seen = new Set<string>();
+  const news: NewsItem[] = [];
+  for (const item of [...newsRaw, ...insiders, ...disclosures, ...earningsItems]) {
+    const key = item.title.toLowerCase().slice(0, 60);
+    if (!seen.has(key)) { seen.add(key); news.push(item); }
+  }
+  news.sort((a, b) => b.publishedAt - a.publishedAt);
 
   const notFound = !liveInfo;
   const name = liveInfo?.name ?? ticker.toUpperCase();
