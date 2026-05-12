@@ -201,9 +201,10 @@ function YoY({ val }: { val: string }) {
 }
 
 function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () => void }) {
-  const [summary, setSummary] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [bullets, setBullets]   = useState<string[]>([]);
+  const [loading, setLoading]   = useState(false);
   const [fetchErr, setFetchErr] = useState(false);
+  const [secFiling, setSecFiling] = useState(false);
 
   const isNews     = target.kind === "news";
   const isEarnings = target.kind === "earnings";
@@ -213,10 +214,14 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
 
   useEffect(() => {
     if (!isNews || !url) return;
-    setLoading(true); setSummary(null); setFetchErr(false);
+    setLoading(true); setBullets([]); setFetchErr(false); setSecFiling(false);
     fetch(`/api/preview?url=${encodeURIComponent(url)}`)
       .then(r => r.json())
-      .then(d => { if (d.summary) setSummary(d.summary); else setFetchErr(true); })
+      .then(d => {
+        if (d.secFiling || d.blocked) { setFetchErr(true); return; }
+        if (d.bullets?.length) setBullets(d.bullets);
+        else setFetchErr(true);
+      })
       .catch(() => setFetchErr(true))
       .finally(() => setLoading(false));
   }, [url, isNews]);
@@ -237,9 +242,9 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
       display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
     }}>
       <div onClick={ev => ev.stopPropagation()} style={{
-        background: "white", borderRadius: 20, width: "100%", maxWidth: 400,
+        background: "white", borderRadius: 20, width: "100%", maxWidth: 520,
         boxShadow: "0 24px 80px rgba(0,0,0,0.18)", overflow: "hidden",
-        maxHeight: "85vh", display: "flex", flexDirection: "column",
+        maxHeight: "88vh", display: "flex", flexDirection: "column",
       }}>
 
         {/* ── Header ── */}
@@ -298,19 +303,29 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
           {n && (
             <>
               {loading && (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", fontSize: 12, padding: "12px 0" }}>
-                  <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span>
-                  불러오는 중...
+                <div style={{ color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", fontSize: 12, padding: "20px 0", textAlign: "center" }}>
+                  핵심 내용 분석 중...
                 </div>
               )}
-              {!loading && summary && (
-                <div style={{ fontSize: 13, color: "#3f3f46", lineHeight: 1.75, whiteSpace: "pre-wrap" }}>
-                  {summary}
+              {!loading && bullets.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {bullets.map((b, i) => (
+                    <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <span style={{
+                        flexShrink: 0, width: 20, height: 20, borderRadius: "50%",
+                        background: "#18181b", color: "white",
+                        fontFamily: "var(--font-mono), monospace", fontSize: 10, fontWeight: 800,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        marginTop: 1,
+                      }}>{i + 1}</span>
+                      <span style={{ fontSize: 13, color: "#3f3f46", lineHeight: 1.7 }}>{b}</span>
+                    </div>
+                  ))}
                 </div>
               )}
-              {!loading && fetchErr && (
-                <div style={{ color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", fontSize: 12, padding: "12px 0" }}>
-                  미리보기를 불러올 수 없습니다.
+              {!loading && fetchErr && bullets.length === 0 && (
+                <div style={{ color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", fontSize: 12, padding: "20px 0", textAlign: "center", lineHeight: 1.8 }}>
+                  해당 기사는 미리보기를 지원하지 않습니다.<br />아래 버튼으로 원문을 확인해주세요.
                 </div>
               )}
             </>
