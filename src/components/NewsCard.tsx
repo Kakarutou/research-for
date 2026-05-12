@@ -212,8 +212,16 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
   const source     = isNews ? target.item.source : "SEC 실적발표";
   const ts         = target.item.publishedAt;
 
+  const newsItem = isNews ? (target.item as NewsItem) : null;
+
   useEffect(() => {
-    if (!isNews || !url) return;
+    if (!isNews) return;
+    // Finnhub summary already available — use directly, no fetch needed
+    if (newsItem?.summary) {
+      setBullets([newsItem.summary]);
+      return;
+    }
+    if (!url) return;
     setLoading(true); setBullets([]); setFetchErr(false); setSecFiling(false);
     fetch(`/api/preview?url=${encodeURIComponent(url)}`)
       .then(r => r.json())
@@ -224,7 +232,7 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
       })
       .catch(() => setFetchErr(true))
       .finally(() => setLoading(false));
-  }, [url, isNews]);
+  }, [url, isNews, newsItem?.summary]);
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
