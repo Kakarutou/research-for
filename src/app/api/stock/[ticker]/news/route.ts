@@ -9,26 +9,13 @@ export interface NewsItem {
   image?: string;
 }
 
-const FINNHUB_KEY = process.env.FINNHUB_KEY ?? process.env.FINNHUB_API_KEY ?? '';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-// ── 회사 키워드 조회 (Finnhub 프로필) ─────────────────────────────────────────
-async function getCompanyKeywords(ticker: string): Promise<string[]> {
-  const base = [ticker.toLowerCase()];
-  if (!FINNHUB_KEY) return base;
-  try {
-    const res = await fetch(
-      `https://finnhub.io/api/v1/stock/profile2?symbol=${ticker}&token=${FINNHUB_KEY}`,
-      { next: { revalidate: 86400 } },
-    );
-    if (!res.ok) return base;
-    const { name }: { name?: string } = await res.json();
-    if (!name) return base;
-    // "Rackspace Technology Inc" → ["rackspace technology", "rackspace", "rxt"]
-    const clean     = name.toLowerCase().replace(/\s+(inc\.?|corp\.?|ltd\.?|llc|co\.?|plc)$/i, '').trim();
-    const firstWord = clean.split(' ')[0];
-    return [...new Set([clean, firstWord, ticker.toLowerCase()])];
-  } catch { return base; }
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
 }
 
 // ── 라운드업/무관 기사 패턴 ──────────────────────────────────────────────────
@@ -45,31 +32,12 @@ const ROUNDUP_RE = [
   /intraday session$/i,
   /today's session\.?$/i,
   /monday's session|tuesday's session|wednesday's session|thursday's session|friday's session/i,
-  /^\d+ (information technology|tech|financial|energy|health)/i, // "12 IT stocks moving..."
-  /upbeat q\d results.+joins/i,          // "Company A Posts Upbeat Q1, Joins Company B..."
+  /^\d+ (information technology|tech|financial|energy|health)/i,
+  /upbeat q\d results.+joins/i,
   /posts (upbeat|downbeat).+joins/i,
 ];
 
-function isRelevant(item: NewsItem, keywords: string[]): boolean {
-  // GlobeNewswire는 이미 티커로 필터된 공식 보도자료 — 항상 포함
-  if (item.source === 'GlobeNewswire') return true;
-
-  // 라운드업 패턴 걸리면 제외
-  if (ROUNDUP_RE.some(re => re.test(item.title))) return false;
-
-  const title   = item.title.toLowerCase();
-  const summary = (item.summary ?? '').toLowerCase();
-
-  // 제목에 회사명/티커 포함 여부
-  if (keywords.some(kw => title.includes(kw))) return true;
-
-  // 제목에는 없지만 요약에 명확히 언급된 경우 (짧은 제목 한정)
-  if (title.length < 70 && keywords.some(kw => summary.includes(kw))) return true;
-
-  return false;
-}
-
-// ── 중복 제거 (단순 60자 → 의미 유사도 기반) ────────────────────────────────
+// ── 중복 제거 ──────────────────────────────────────────────────────────────
 function keyWords(title: string): Set<string> {
   return new Set(
     title.toLowerCase().split(/\W+/).filter(w => w.length > 3 && !/^(that|this|with|from|have|will|were|they|their|been|more|than|into|also|when|what|about|after|before|which|would|could|should)$/.test(w))
@@ -84,56 +52,38 @@ function isSimilar(a: string, b: string): boolean {
   return shared / Math.min(wa.size, wb.size) >= 0.65;
 }
 
-// ── Finnhub 뉴스 ──────────────────────────────────────────────────────────────
-async function fetchFinnhub(ticker: string): Promise<NewsItem[]> {
-  if (!FINNHUB_KEY) return [];
+// ── Google News RSS (무료, 상업용, 구글 집계 ~1-5분 딜레이) ──────────────────
+async function fetchGoogleNews(ticker: string): Promise<NewsItem[]> {
   try {
-    const to   = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - 30);
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
-
+    const query = encodeURIComponent(`${ticker} stock`);
     const res = await fetch(
-      `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(ticker)}&from=${fmt(from)}&to=${fmt(to)}&token=${FINNHUB_KEY}`,
-      { cache: 'no-store' },
-    );
-    if (!res.ok) return [];
-    const data: { headline: string; source: string; datetime: number; url: string; summary?: string; image?: string }[] = await res.json();
-    return (Array.isArray(data) ? data : [])
-      .filter(n => n.headline && n.url)
-      .map(n => ({
-        title:       n.headline,
-        source:      n.source ?? 'Finnhub',
-        publishedAt: n.datetime,
-        url:         n.url,
-        summary:     n.summary   || undefined,
-        image:       n.image     || undefined,
-      }));
-  } catch { return []; }
-}
-
-// ── Stock Titan RSS (near real-time press releases) ───────────────────────────
-async function fetchStockTitan(ticker: string): Promise<NewsItem[]> {
-  try {
-    const res = await fetch(
-      `https://www.stocktitan.net/rss/news/${encodeURIComponent(ticker)}`,
+      `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`,
       { headers: { 'User-Agent': UA }, cache: 'no-store' },
     );
     if (!res.ok) return [];
     const xml = await res.text();
-    if (!xml.includes('<item>')) return [];
-    return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 20).map(([, b]) => {
-      const plain = (tag: string) => b.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]>`))?.[1]?.trim()
-                                  ?? b.match(new RegExp(`<${tag}[^>]*>([^<]*)<`))?.[1]?.trim() ?? '';
-      const title       = plain('title').replace(/\s*\|\s*[A-Z]+ Stock News\s*$/, '').trim();
-      const url         = plain('link') || plain('guid');
-      const publishedAt = plain('pubDate') ? Math.floor(new Date(plain('pubDate')).getTime() / 1000) : 0;
-      return { title, source: 'Stock Titan', publishedAt, url } satisfies NewsItem;
-    }).filter(n => n.title && n.url);
+
+    return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)].slice(0, 30).flatMap(([, b]) => {
+      const plain = (tag: string) =>
+        b.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`))?.[1]?.trim() ?? '';
+
+      const rawTitle  = plain('title');
+      const url       = plain('link');
+      const pubStr    = plain('pubDate');
+      const sourceName = plain('source') || 'Google News';
+
+      if (!rawTitle || !url) return [];
+
+      // Strip " - Source Name" suffix and decode HTML entities
+      const title = decodeEntities(rawTitle.replace(/\s*[-–]\s*.{3,30}$/, '').trim() || rawTitle);
+      const publishedAt = pubStr ? Math.floor(new Date(pubStr).getTime() / 1000) : 0;
+
+      return [{ title, source: sourceName, publishedAt, url } satisfies NewsItem];
+    }).filter(n => !ROUNDUP_RE.some(re => re.test(n.title)));
   } catch { return []; }
 }
 
-// ── GlobeNewswire RSS ─────────────────────────────────────────────────────────
+// ── GlobeNewswire RSS (실시간 공식 보도자료) ──────────────────────────────────
 async function fetchGlobeNewswire(ticker: string): Promise<NewsItem[]> {
   try {
     const res = await fetch(
@@ -159,24 +109,18 @@ async function fetchGlobeNewswire(ticker: string): Promise<NewsItem[]> {
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
-  const [keywords, finnhub, globe, stocktitan] = await Promise.all([
-    getCompanyKeywords(ticker),
-    fetchFinnhub(ticker),
+  const [globe, google] = await Promise.all([
     fetchGlobeNewswire(ticker),
-    fetchStockTitan(ticker),
+    fetchGoogleNews(ticker),
   ]);
 
-  // 1) 관련성 필터 — Stock Titan은 티커 피드이므로 항상 관련
-  const relevant = [
-    ...finnhub.filter(item => isRelevant(item, keywords)),
-    ...globe,          // GlobeNewswire: already ticker-filtered
-    ...stocktitan,     // Stock Titan: per-ticker RSS, always relevant
-  ];
+  // 합치기: GlobeNewswire(실시간 공보) + Google News(구글 집계)
+  const combined = [...globe, ...google];
 
-  // 2) 중복 제거 (날짜순 정렬 후, 유사도 높은 이후 기사 제거)
-  relevant.sort((a, b) => b.publishedAt - a.publishedAt);
+  // 날짜순 정렬 후 유사 기사 중복 제거
+  combined.sort((a, b) => b.publishedAt - a.publishedAt);
   const deduped: NewsItem[] = [];
-  for (const item of relevant) {
+  for (const item of combined) {
     if (!deduped.some(existing => isSimilar(item.title, existing.title))) {
       deduped.push(item);
     }
