@@ -194,7 +194,7 @@ async function fetchSecFilingContent(indexUrl: string): Promise<string[]> {
 
       // 커버페이지 감지: 실질 내용이 없으면 empty → docList fallback
       const hasRealContent = sentences.some(s =>
-        /\$[\d,]+|\d+\s*%|appointed|agreed|entered|completed|announced|acquired|billion|million|quarter|warrant|offering|agreement/i.test(s)
+        /\$[\d,]+|\d+\s*%|appointed|agreed|entered|completed|announced|acquired|billion|million|quarter|warrant|offering|agreement|resigned|resignation|director|officer|named|elected|effective|terminated|approved|partnership|license|collaboration|transaction|amendment|merger|acquisition|dividend|repurchase|default|waiver|settlement/i.test(s)
       );
       if (!hasRealContent || sentences.length === 0) return [];
 
