@@ -121,6 +121,7 @@ const ITEM_LABELS: Record<string, string> = {
 
 // 폼 타입 → 한국어 레이블
 const FORM_LABELS: Record<string, string> = {
+  // 미국 내국 기업
   '8-K':     '수시공시 (8-K)',
   '8-K/A':   '수시공시 수정 (8-K/A)',
   '10-K':    '연간보고서 (10-K)',
@@ -131,15 +132,31 @@ const FORM_LABELS: Record<string, string> = {
   'S-1':     'IPO 신고서',
   'S-1/A':   'IPO 신고서 수정',
   'S-3':     '유가증권 신고서',
+  'S-3/A':   '유가증권 신고서 수정',
   '424B4':   '투자설명서',
+  '424B5':   '투자설명서 추가',
   'SC 13G':  '대량보유 보고서',
   'SC 13D':  '대량보유 변경 보고서',
   'SC 13G/A':'대량보유 보고서 수정',
   'SC 13D/A':'대량보유 변경 수정',
   '4':       '내부자 거래 (Form 4)',
   '4/A':     '내부자 거래 수정 (Form 4/A)',
+  '3':       '임원·주요주주 초기신고 (Form 3)',
+  '3/A':     '임원·주요주주 초기신고 수정',
   'NT 10-K': '연간보고서 제출 지연',
   'NT 10-Q': '분기보고서 제출 지연',
+  // 외국 기업 (ADR·외국 상장사)
+  '6-K':     '수시공시 (6-K)',
+  '6-K/A':   '수시공시 수정 (6-K/A)',
+  '20-F':    '연간보고서 (20-F)',
+  '20-F/A':  '연간보고서 수정 (20-F/A)',
+  '40-F':    '연간보고서 (40-F)',
+  '40-F/A':  '연간보고서 수정 (40-F/A)',
+  'F-1':     'IPO 신고서 (외국기업)',
+  'F-1/A':   'IPO 신고서 수정 (외국기업)',
+  'F-3':     '유가증권 신고서 (외국기업)',
+  'F-3/A':   '유가증권 신고서 수정 (외국기업)',
+  '424B3':   '투자설명서',
 };
 
 const TARGET_FORMS = new Set(Object.keys(FORM_LABELS));
@@ -204,8 +221,8 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
     const items: string[]  = recent.items          ?? [];
 
     const result: NewsItem[] = [];
-    // Form 4는 건수가 많으므로 별도 카운터로 제한
     let form4Count = 0;
+    let form3Count = 0;
 
     for (let i = 0; i < forms.length && result.length < 40; i++) {
       if (!TARGET_FORMS.has(forms[i])) continue;
@@ -215,9 +232,11 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
       const accn  = accns[i];
       const item  = items[i] ?? '';
 
-      // Form 4는 최근 10건만
+      // Form 4/3는 건수가 많으므로 제한
       if ((form === '4' || form === '4/A') && form4Count >= 10) continue;
       if (form === '4' || form === '4/A') form4Count++;
+      if ((form === '3' || form === '3/A') && form3Count >= 5) continue;
+      if (form === '3' || form === '3/A') form3Count++;
 
       const title       = buildTitle(form, item, ticker.toUpperCase());
       const publishedAt = date ? Math.floor(new Date(date).getTime() / 1000) : 0;
