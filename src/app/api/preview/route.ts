@@ -68,10 +68,60 @@ function buildBullets(paragraphs: string[], ogDesc: string): string[] {
 }
 
 // ── SEC EDGAR 공시 내용 추출 ──────────────────────────────────────────────────
-interface SecDoc { url: string; description: string; type: string; }
+interface SecDoc { url: string; description: string; type: string; isXml?: boolean; }
 
 // SEC 폼 커버페이지 보일러플레이트 패턴
 const SEC_BOILERPLATE = /check\s*mark|form\s+8-k|exchange\s+act|file\s+number|emerging\s+growth|pursuant\s+to\s+rule|IRS\s+Employer|EDGAR|state\s+or\s+other\s+jurisdiction|exact\s+name\s+of\s+registrant/i;
+
+// Form 4 XML 파싱 — insider 거래 요약
+function parseForm4Xml(xml: string): string[] {
+  const get = (tag: string) => xml.match(new RegExp(`<${tag}[^>]*>([^<]*)<\/${tag}>`, 'i'))?.[1]?.trim() ?? '';
+
+  // 보고자 정보
+  const ownerName = get('rptOwnerName');
+  const isDirector = get('isDirector') === '1';
+  const isOfficer  = get('isOfficer')  === '1';
+  const officerTitle = get('officerTitle');
+  const role = officerTitle || (isDirector ? 'Director' : isOfficer ? 'Officer' : '주요주주');
+
+  // 거래 내역
+  const results: string[] = [];
+  const txBlocks = [...xml.matchAll(/<nonDerivativeTransaction>([\s\S]*?)<\/nonDerivativeTransaction>/gi)];
+  const derBlocks = [...xml.matchAll(/<derivativeTransaction>([\s\S]*?)<\/derivativeTransaction>/gi)];
+
+  const codeLabel: Record<string, string> = {
+    S: '매도', P: '매수', A: 'Award(부여)', M: '옵션행사', F: '세금원천징수',
+    G: '증여', J: '기타', X: '파생만기',
+  };
+
+  for (const [, block] of [...txBlocks, ...derBlocks]) {
+    const code   = block.match(/<transactionCode>([A-Z])<\/transactionCode>/i)?.[1] ?? '';
+    const shares = block.match(/<transactionShares>\s*<value>([\d.,]+)<\/value>/i)?.[1] ?? '';
+    const price  = block.match(/<transactionPricePerShare>\s*<value>([\d.,]+)<\/value>/i)?.[1] ?? '';
+    const owned  = block.match(/<sharesOwnedFollowingTransaction>\s*<value>([\d.,]+)<\/value>/i)?.[1] ?? '';
+    const secName = block.match(/<securityTitle>\s*<value>([^<]+)<\/value>/i)?.[1]?.trim() ?? '';
+
+    if (!shares || !code) continue;
+    const action = codeLabel[code] ?? code;
+    const sharesNum = parseFloat(shares.replace(/,/g, ''));
+    const sharesStr = sharesNum >= 1000
+      ? sharesNum.toLocaleString('en-US', { maximumFractionDigits: 0 })
+      : shares;
+
+    let line = `${ownerName} (${role}) — ${secName || 'Common Stock'} ${action} ${sharesStr}주`;
+    if (price && parseFloat(price) > 0) line += ` @ $${parseFloat(price).toFixed(2)}`;
+    if (owned) {
+      const ownedNum = parseFloat(owned.replace(/,/g, ''));
+      line += ` (보유 후 잔량: ${ownedNum.toLocaleString('en-US', { maximumFractionDigits: 0 })}주)`;
+    }
+    results.push(line);
+  }
+
+  if (results.length === 0 && ownerName) {
+    results.push(`${ownerName} (${role}) — 거래내역 없음 (Form 4 제출)`);
+  }
+  return results.slice(0, 5);
+}
 
 async function fetchSecFilingContent(indexUrl: string): Promise<string[]> {
   try {
@@ -86,12 +136,14 @@ async function fetchSecFilingContent(indexUrl: string): Promise<string[]> {
 
     // filing index table 파싱
     const docs: SecDoc[] = [];
-    let ex99Url = '';
+    let ex99Url    = '';
     let primaryUrl = '';
+    let form4XmlUrl = '';
 
     for (const [, row] of idxHtml.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
-      // iXBRL viewer URL (/ix?doc=/Archives/...) 또는 일반 /Archives/... 처리
-      const hrefRaw = row.match(/href="([^"]+\.htm[l]?)"/i)?.[1] ?? '';
+      // iXBRL viewer URL, /Archives HTML, 또는 /Archives XML 처리
+      const hrefRaw = row.match(/href="([^"]+\.(htm[l]?|xml))"/i)?.[1] ?? '';
+      const isXml = hrefRaw.toLowerCase().endsWith('.xml');
       const archivePath = hrefRaw.includes('/ix?doc=')
         ? hrefRaw.replace(/^.*\/ix\?doc=/, '')
         : hrefRaw.startsWith('/Archives') ? hrefRaw : '';
@@ -103,10 +155,14 @@ async function fetchSecFilingContent(indexUrl: string): Promise<string[]> {
       const type = tds[3] ?? '';
 
       if (!/graphic|image|jpg|png|gif/i.test(type) && desc) {
-        docs.push({ url: full, description: desc, type });
+        docs.push({ url: full, description: desc, type, isXml });
       }
       if (/ex[.-]?99\.?1\b/i.test(type) && !ex99Url)  ex99Url    = full;
-      if (!primaryUrl && />\s*1\s*</.test(row))         primaryUrl = full;
+      if (!primaryUrl && />\s*1\s*</.test(row) && !isXml) primaryUrl = full;
+
+      // Form 4/3 XML 감지: xslF345 패턴 또는 type이 4/3
+      if (!form4XmlUrl && isXml && /xslF345|wk-form[34]/i.test(hrefRaw)) form4XmlUrl = full;
+      if (!form4XmlUrl && isXml && /^(4|4\/A|3|3\/A)$/i.test(type))      form4XmlUrl = full;
     }
 
     // 문서 텍스트 추출 (iXBRL 포함) — boilerplate 필터 적용
@@ -144,6 +200,18 @@ async function fetchSecFilingContent(indexUrl: string): Promise<string[]> {
 
       return buildBullets(sentences.slice(0, 30), '');
     };
+
+    // 0순위: Form 4/3 XML 파싱
+    if (form4XmlUrl) {
+      try {
+        const r = await fetch(form4XmlUrl, { headers: { 'User-Agent': UA_SEC }, signal: AbortSignal.timeout(8000) });
+        if (r.ok) {
+          const xml = await r.text();
+          const bullets = parseForm4Xml(xml);
+          if (bullets.length > 0) return bullets;
+        }
+      } catch { /* fall through */ }
+    }
 
     // 1순위: EX-99.1 press release
     if (ex99Url) {
