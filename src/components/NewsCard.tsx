@@ -211,11 +211,12 @@ function YoY({ val }: { val: string }) {
 }
 
 function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () => void }) {
-  const [bullets, setBullets]   = useState<string[]>([]);
-  const [loading, setLoading]   = useState(false);
-  const [fetchErr, setFetchErr] = useState(false);
+  const [bullets, setBullets]     = useState<string[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [fetchErr, setFetchErr]   = useState(false);
   const [secFiling, setSecFiling] = useState(false);
-  const [paywall, setPaywall]   = useState(false);
+  const [dartFiling, setDartFiling] = useState(false);
+  const [paywall, setPaywall]     = useState(false);
 
   const isNews     = target.kind === "news";
   const isEarnings = target.kind === "earnings";
@@ -233,12 +234,14 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
       return;
     }
     if (!url) return;
-    setLoading(true); setBullets([]); setFetchErr(false); setSecFiling(false); setPaywall(false);
+    setLoading(true); setBullets([]); setFetchErr(false); setSecFiling(false); setDartFiling(false); setPaywall(false);
     fetch(`/api/preview?url=${encodeURIComponent(url)}`)
       .then(r => r.json())
       .then(d => {
-        if (d.paywall)             { setPaywall(true); return; }
-        if (d.secFiling || d.blocked) { setFetchErr(true); return; }
+        if (d.paywall)    { setPaywall(true); return; }
+        if (d.dartFiling) { setDartFiling(true); if (d.bullets?.length) setBullets(d.bullets); return; }
+        if (d.secFiling)  { setSecFiling(true);  if (d.bullets?.length) setBullets(d.bullets); return; }
+        if (d.blocked)    { setFetchErr(true); return; }
         if (d.bullets?.length) setBullets(d.bullets);
         else setFetchErr(true);
       })
@@ -364,7 +367,33 @@ function PreviewModal({ target, onClose }: { target: PreviewTarget; onClose: () 
                   )}
                 </div>
               )}
-              {!loading && fetchErr && !paywall && bullets.length === 0 && (
+              {!loading && dartFiling && bullets.length === 0 && (
+                <div style={{
+                  background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)",
+                  borderRadius: 10, padding: "14px 16px",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", fontFamily: "var(--font-mono), monospace", marginBottom: 6, letterSpacing: "0.04em" }}>
+                    DART 전자공시
+                  </div>
+                  <div style={{ fontSize: 13, color: "#52525b", lineHeight: 1.65 }}>
+                    금융감독원 전자공시 문서입니다.<br />아래 버튼으로 공시 전문을 확인할 수 있습니다.
+                  </div>
+                </div>
+              )}
+              {!loading && secFiling && bullets.length === 0 && (
+                <div style={{
+                  background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.15)",
+                  borderRadius: 10, padding: "14px 16px",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", fontFamily: "var(--font-mono), monospace", marginBottom: 6, letterSpacing: "0.04em" }}>
+                    SEC EDGAR
+                  </div>
+                  <div style={{ fontSize: 13, color: "#52525b", lineHeight: 1.65 }}>
+                    SEC 공식 공시 문서입니다.<br />아래 버튼으로 원문을 확인해주세요.
+                  </div>
+                </div>
+              )}
+              {!loading && fetchErr && !paywall && !secFiling && !dartFiling && bullets.length === 0 && (
                 <div style={{ color: "#a1a1aa", fontFamily: "var(--font-mono), monospace", fontSize: 12, padding: "20px 0", textAlign: "center", lineHeight: 1.8 }}>
                   해당 기사는 미리보기를 지원하지 않습니다.<br />아래 버튼으로 원문을 확인해주세요.
                 </div>
