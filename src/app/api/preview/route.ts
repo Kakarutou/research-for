@@ -160,9 +160,9 @@ async function fetchSecFilingContent(indexUrl: string): Promise<string[]> {
       if (/ex[.-]?99\.?1\b/i.test(type) && !ex99Url)  ex99Url    = full;
       if (!primaryUrl && />\s*1\s*</.test(row) && !isXml) primaryUrl = full;
 
-      // Form 4/3 XML 감지: xslF345 패턴 또는 type이 4/3
-      if (!form4XmlUrl && isXml && /xslF345|wk-form[34]/i.test(hrefRaw)) form4XmlUrl = full;
-      if (!form4XmlUrl && isXml && /^(4|4\/A|3|3\/A)$/i.test(type))      form4XmlUrl = full;
+      // Form 4/3 XML 감지: xslF345 뷰어(HTML 반환)는 제외하고 직접 XML만 인식
+      if (!form4XmlUrl && isXml && !hrefRaw.includes('/xslF345') && /^(4|4\/A|3|3\/A)$/i.test(type)) form4XmlUrl = full;
+      if (!form4XmlUrl && isXml && !hrefRaw.includes('/xslF345') && /wk-form[34]/i.test(hrefRaw))    form4XmlUrl = full;
     }
 
     // 문서 텍스트 추출 (iXBRL 포함) — boilerplate 필터 적용
