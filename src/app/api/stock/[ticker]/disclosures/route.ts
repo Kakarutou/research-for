@@ -3,6 +3,96 @@ import type { NewsItem } from '../news/route';
 
 const UA = 'research-for wjddlswjs7398@gmail.com';
 
+function getKoreanCode(ticker: string): string | null {
+  if (/^\d{6}$/.test(ticker)) return ticker;
+  const upper = ticker.toUpperCase();
+  if (upper.endsWith('.KS') || upper.endsWith('.KQ')) return ticker.slice(0, 6);
+  return null;
+}
+
+function classifyDart(title: string): string {
+  if (/사업보고서|분기보고서|반기보고서|감사보고서/.test(title)) return '정기공시';
+  if (/주요사항/.test(title)) return '주요사항';
+  if (/전환사채|유상증자|신주인수권|증권신고서|신주발행/.test(title)) return '발행공시';
+  if (/대량보유|주식등의대량|임원.*변동|소유주식변동/.test(title)) return '지분공시';
+  return '수시공시';
+}
+
+const dartCodeCache: Record<string, string | null> = {};
+
+async function getDartCode(stockCode: string): Promise<string | null> {
+  if (stockCode in dartCodeCache) return dartCodeCache[stockCode];
+  try {
+    const res = await fetch('https://dart.fss.or.kr/corp/searchCorp.ax', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Referer': 'https://dart.fss.or.kr',
+      },
+      body: `currentPage=1&maxResults=5&textCrpNm=${encodeURIComponent(stockCode)}`,
+      cache: 'no-store',
+    });
+    if (!res.ok) { dartCodeCache[stockCode] = null; return null; }
+    const html = await res.text();
+    const m = html.match(/name='hiddenCikCD\d+'\s+value='(\d{8})'/);
+    const code = m ? m[1] : null;
+    dartCodeCache[stockCode] = code;
+    return code;
+  } catch {
+    dartCodeCache[stockCode] = null;
+    return null;
+  }
+}
+
+async function fetchDartDisclosures(stockCode: string): Promise<NewsItem[]> {
+  try {
+    const dartCode = await getDartCode(stockCode);
+    if (!dartCode) return [];
+
+    const res = await fetch('https://dart.fss.or.kr/dsab007/detailSearch.ax', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        'Referer': 'https://dart.fss.or.kr',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+      body: `currentPage=1&maxResults=30&textCrpCik=${encodeURIComponent(dartCode)}`,
+      cache: 'no-store',
+    });
+
+    if (!res.ok) return [];
+
+    const html = await res.text();
+    const results: NewsItem[] = [];
+
+    for (const [, row] of html.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/g)) {
+      const linkMatch = row.match(/href="\/dsaf001\/main\.do\?rcpNo=(\d+)"/);
+      if (!linkMatch) continue;
+      const rcpNo = linkMatch[1];
+
+      const titleMatch = row.match(/openReportViewer\('[^']*','[^']*'\)[^>]*>([\s\S]*?)<\/a>/);
+      if (!titleMatch) continue;
+      const title = titleMatch[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      if (!title) continue;
+
+      const dateMatches = [...row.matchAll(/>(\d{4}\.\d{2}\.\d{2})</g)];
+      if (!dateMatches.length) continue;
+      const dateStr = dateMatches[dateMatches.length - 1][1];
+      const publishedAt = Math.floor(new Date(dateStr.replace(/\./g, '-')).getTime() / 1000);
+
+      const category = classifyDart(title);
+      const url = `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rcpNo}`;
+      results.push({ title: `[${category}] ${title}`, source: 'DART', publishedAt, url });
+    }
+
+    return results.slice(0, 30);
+  } catch {
+    return [];
+  }
+}
+
 // 8-K 아이템 코드 → 한국어 설명
 const ITEM_LABELS: Record<string, string> = {
   '1.01': '중요 계약 체결',
@@ -32,16 +122,24 @@ const ITEM_LABELS: Record<string, string> = {
 // 폼 타입 → 한국어 레이블
 const FORM_LABELS: Record<string, string> = {
   '8-K':     '수시공시 (8-K)',
+  '8-K/A':   '수시공시 수정 (8-K/A)',
   '10-K':    '연간보고서 (10-K)',
+  '10-K/A':  '연간보고서 수정 (10-K/A)',
   '10-Q':    '분기보고서 (10-Q)',
+  '10-Q/A':  '분기보고서 수정 (10-Q/A)',
   'DEF 14A': '주주총회 위임장',
   'S-1':     'IPO 신고서',
+  'S-1/A':   'IPO 신고서 수정',
   'S-3':     '유가증권 신고서',
   '424B4':   '투자설명서',
   'SC 13G':  '대량보유 보고서',
   'SC 13D':  '대량보유 변경 보고서',
   'SC 13G/A':'대량보유 보고서 수정',
   'SC 13D/A':'대량보유 변경 수정',
+  '4':       '내부자 거래 (Form 4)',
+  '4/A':     '내부자 거래 수정 (Form 4/A)',
+  'NT 10-K': '연간보고서 제출 지연',
+  'NT 10-Q': '분기보고서 제출 지연',
 };
 
 const TARGET_FORMS = new Set(Object.keys(FORM_LABELS));
@@ -81,6 +179,12 @@ function buildTitle(form: string, items: string, ticker: string): string {
 export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
 
+  const krCode = getKoreanCode(ticker);
+  if (krCode) {
+    const disclosures = await fetchDartDisclosures(krCode);
+    return NextResponse.json(disclosures);
+  }
+
   try {
     const cik = await getCik(ticker);
     if (!cik) return NextResponse.json([]);
@@ -100,8 +204,10 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
     const items: string[]  = recent.items          ?? [];
 
     const result: NewsItem[] = [];
+    // Form 4는 건수가 많으므로 별도 카운터로 제한
+    let form4Count = 0;
 
-    for (let i = 0; i < forms.length && result.length < 30; i++) {
+    for (let i = 0; i < forms.length && result.length < 40; i++) {
       if (!TARGET_FORMS.has(forms[i])) continue;
 
       const form  = forms[i];
@@ -109,10 +215,15 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
       const accn  = accns[i];
       const item  = items[i] ?? '';
 
+      // Form 4는 최근 10건만
+      if ((form === '4' || form === '4/A') && form4Count >= 10) continue;
+      if (form === '4' || form === '4/A') form4Count++;
+
       const title       = buildTitle(form, item, ticker.toUpperCase());
       const publishedAt = date ? Math.floor(new Date(date).getTime() / 1000) : 0;
       const cleanAccn   = accn.replace(/-/g, '');
-      const url         = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${cik}&type=${encodeURIComponent(form)}&dateb=&owner=include&count=10`;
+      // 개별 공시 페이지로 직접 링크
+      const url = `https://www.sec.gov/Archives/edgar/data/${cik}/${cleanAccn}/${accn}-index.htm`;
 
       result.push({ title, source: 'SEC EDGAR', publishedAt, url } satisfies NewsItem);
     }
