@@ -12,6 +12,49 @@ export interface NewsItem {
 const UA     = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const SEC_UA = 'research-for wjddlswjs7398@gmail.com'; // SEC EDGAR requires a real contact UA
 
+// ── 회사명 조회 (소형주/외국기업 뉴스 커버리지 향상) ──────────────────────────
+const companyNameCache: Record<string, string | null> = {};
+
+async function getCompanyName(ticker: string): Promise<string | null> {
+  if (ticker in companyNameCache) return companyNameCache[ticker];
+
+  // 1차: company_tickers.json (미국 내국 기업 + 일부 외국기업)
+  try {
+    const res = await fetch('https://www.sec.gov/files/company_tickers.json', {
+      headers: { 'User-Agent': SEC_UA },
+      next: { revalidate: 86400 },
+    });
+    if (res.ok) {
+      const data: Record<string, { cik_str: number; ticker: string; title: string }> = await res.json();
+      for (const v of Object.values(data)) {
+        if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
+          companyNameCache[ticker] = v.title;
+          return v.title;
+        }
+      }
+    }
+  } catch {}
+
+  // 2차: EDGAR Atom (외국기업·최근상장 등)
+  try {
+    const res = await fetch(
+      `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=&CIK=${encodeURIComponent(ticker)}&type=&dateb=&owner=include&count=1&search_text=&output=atom`,
+      { headers: { 'User-Agent': SEC_UA }, signal: AbortSignal.timeout(5000) },
+    );
+    if (res.ok) {
+      const xml = await res.text();
+      const nameM = xml.match(/<company-name>([^<]+)<\/company-name>/i);
+      if (nameM) {
+        companyNameCache[ticker] = nameM[1].trim();
+        return companyNameCache[ticker];
+      }
+    }
+  } catch {}
+
+  companyNameCache[ticker] = null;
+  return null;
+}
+
 function decodeEntities(s: string): string {
   return s
     .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -69,11 +112,11 @@ function isSimilar(a: string, b: string): boolean {
 // SEC EDGAR 공시는 disclosures/route.ts에서 전담 처리 — news route에서 중복 생성 제거
 
 // ── Google News RSS (무료, 상업용, 구글 집계 ~1-5분 딜레이) ──────────────────
-async function fetchGoogleNews(ticker: string): Promise<NewsItem[]> {
+async function fetchGoogleNews(query: string, appendStock = true): Promise<NewsItem[]> {
   try {
-    const query = encodeURIComponent(`${ticker} stock`);
+    const q = encodeURIComponent(appendStock ? `${query} stock` : query);
     const res = await fetch(
-      `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`,
+      `https://news.google.com/rss/search?q=${q}&hl=en-US&gl=US&ceid=US:en`,
       { headers: { 'User-Agent': UA }, cache: 'no-store' },
     );
     if (!res.ok) return [];
@@ -234,18 +277,28 @@ async function fetchNaverNews(code: string): Promise<NewsItem[]> {
 // ── 관련성 필터 (다른 종목 기사 제거) ────────────────────────────────────────
 const GENERIC_TITLES = new Set(['msn money', 'yahoo finance', 'google news', 'stock price, quote & chart']);
 
-function isTickerRelevant(title: string, ticker: string): boolean {
+function isTickerRelevant(title: string, ticker: string, companyName?: string | null): boolean {
   if (!title || title.trim().length < 10) return false;
   const lower = title.toLowerCase();
   if (GENERIC_TITLES.has(lower.trim())) return false;
-  // 제목에 generic 플레이스홀더만 있는 경우 제거
   if (/^(msn money|stock price|stock chart|stock quote)\s*[-–]?\s*$/i.test(title.trim())) return false;
 
   const sym = ticker.toLowerCase();
   // 티커 직접 언급 → 관련 있음
   if (lower.includes(sym)) return true;
+
+  // 회사명 단어 중 2개 이상 포함 → 관련 있음 (소형주·외국기업 커버리지 향상)
+  if (companyName) {
+    const nameWords = companyName.toLowerCase()
+      .replace(/\b(inc|ltd|corp|co|llc|plc|group|holdings?|international|technologies?)\b\.?/g, '')
+      .split(/\s+/).filter(w => w.length >= 3);
+    if (nameWords.length > 0) {
+      const matches = nameWords.filter(w => lower.includes(w)).length;
+      if (matches >= Math.min(2, nameWords.length)) return true;
+    }
+  }
+
   // 다른 티커가 괄호 안에 뚜렷하게 등장하고 우리 티커는 없는 경우 → 제거
-  // e.g. "Why Is Opendoor (OPEN) Stock Rocketing" when searching SRXH
   const m = title.match(/\((?:NYSE|NASDAQ|NYSEARCA|NYSEMKT|OTC[A-Z]*)?:?([A-Z]{1,5})\)/);
   if (m && m[1].toLowerCase() !== sym) return false;
   return true;
@@ -264,17 +317,35 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
     return NextResponse.json(news);
   }
 
-  const [globe, google, yahoo, finnhub] = await Promise.all([
+  // 티커 기반 뉴스 + EDGAR 회사명 조회를 동시에 실행
+  const [companyName, globe, google, yahoo, finnhub] = await Promise.all([
+    getCompanyName(ticker),
     fetchGlobeNewswire(ticker),
     fetchGoogleNews(ticker),
     fetchYahooFinance(ticker),
     fetchFinnhub(ticker),
   ]);
 
-  // 합치기: Finnhub·Yahoo(실시간) > GlobeNewswire(공보) > Google News(집계)
+  // 회사명이 티커와 다를 때만 회사명으로 추가 검색 (소형주·외국기업 커버리지)
+  let googleByName: NewsItem[] = [];
+  let globeByName: NewsItem[] = [];
+  const nameQuery = companyName?.toLowerCase();
+  if (nameQuery && nameQuery !== ticker.toLowerCase()) {
+    [googleByName, globeByName] = await Promise.all([
+      fetchGoogleNews(companyName!, false),   // 회사명 직접 검색 (stock 미추가)
+      fetchGlobeNewswire(companyName!),
+    ]);
+    // 회사명 검색 결과는 ROUNDUP 필터만 적용 (이미 회사 특정됨)
+    googleByName = googleByName.filter(n => !ROUNDUP_RE.some(re => re.test(n.title)));
+    globeByName  = globeByName.filter(n => !ROUNDUP_RE.some(re => re.test(n.title)));
+  }
+
+  // 합치기: Finnhub·Yahoo(실시간) > GlobeNewswire(공보) > Google News(집계) > 회사명 검색
   // SEC 공시는 disclosures/route.ts 전담 (중복 방지)
-  const combined = [...finnhub, ...yahoo, ...globe, ...google]
-    .filter(n => isTickerRelevant(n.title, ticker));
+  const combined = [
+    ...finnhub, ...yahoo, ...globe, ...google,
+    ...googleByName, ...globeByName,
+  ].filter(n => isTickerRelevant(n.title, ticker, companyName));
 
   // 날짜순 정렬 후 유사 기사 중복 제거
   combined.sort((a, b) => b.publishedAt - a.publishedAt);
