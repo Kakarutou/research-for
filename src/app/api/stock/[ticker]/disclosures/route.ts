@@ -288,8 +288,15 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
       const title       = buildTitle(form, item, ticker.toUpperCase());
       const publishedAt = date ? Math.floor(new Date(date).getTime() / 1000) : 0;
       const cleanAccn   = accn.replace(/-/g, '');
-      // 개별 공시 페이지로 직접 링크
-      const url = `https://www.sec.gov/Archives/edgar/data/${cik}/${cleanAccn}/${accn}-index.htm`;
+      // SC 13G/D, SC TO 등 제3자 제출 공시는 기관투자자 CIK로 저장됨
+      // accn 앞 10자리가 실제 파일러 CIK (ex: "0002134513-26-000001" → 2134513)
+      const THIRD_PARTY_FORMS = new Set([
+        'SC 13G', 'SC 13G/A', 'SC 13D', 'SC 13D/A',
+        'SCHEDULE 13G', 'SCHEDULE 13G/A', 'SCHEDULE 13D', 'SCHEDULE 13D/A',
+        'SC TO-T', 'SC TO-T/A', 'SC TO-I', 'SC TO-I/A',
+      ]);
+      const filerCik = THIRD_PARTY_FORMS.has(form) ? parseInt(accn.slice(0, 10), 10) : cik;
+      const url = `https://www.sec.gov/Archives/edgar/data/${filerCik}/${cleanAccn}/${accn}-index.htm`;
 
       result.push({ title, source: 'SEC EDGAR', publishedAt, url } satisfies NewsItem);
     }
