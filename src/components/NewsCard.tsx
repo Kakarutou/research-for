@@ -129,6 +129,20 @@ const NEG_KW = [
   "faces headwinds","significant headwinds","serious concerns",
   "major concerns","layoffs","mass layoffs","job cuts","restructuring",
   "bankruptcy","files for bankruptcy","chapter 11","bearish","negative outlook",
+  // 과거형 동사 (현재형만 있으면 fell, plunged 등 놓침)
+  "fell","fallen","plunged","plunge","dropped","slid","sank","tumbled","crashed","tanked",
+  // 상장폐지·나스닥 관련
+  "delisting","delisted","delist notice","listing deficiency","deficiency notice",
+  "nasdaq compliance","nasdaq notice","listing non-compliance","below minimum bid",
+  "minimum bid price","bid price requirement","listing requirement",
+  // 주식 희석 (소형주·SPAC 특화)
+  "reverse split","reverse stock split","at-the-market","atm offering",
+  "registered direct","private placement","warrant exercise","share dilution",
+  "dilutive offering","dilutive issuance","equity offering","offering price",
+  // 기타 누락 악재
+  "going private","taken private","liquidity concerns","solvency",
+  "missed payment","payment default","loan default","debt restructuring",
+  "수요 감소",  // ← 아래 중복 제거를 위해 여기 유지
   "하락","급락","약세","폭락","추락","52주 신저가",
   "목표가 하향","투자의견 하향","매도 의견","비중축소",
   "적자","적자전환","매출 감소","영업이익 감소","순이익 감소",
@@ -165,7 +179,6 @@ const NEG_KW = [
   "적대적 인수","경쟁당국 제동","독과점 우려",
   "대표이사 사임","ceo 사임","경영진 교체","대규모 감원",
   "부정적","하향","감원","구조조정","리콜","파산",
-  "수요 감소",
 ];
 
 function classify(item: NewsItem): Tab {

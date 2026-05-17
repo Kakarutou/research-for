@@ -82,21 +82,36 @@ const ITEM_LABEL: Record<string, string> = {
 
 async function fetchSecEdgar(ticker: string): Promise<NewsItem[]> {
   try {
-    // CIK 조회 (일별 캐시)
+    // CIK 조회 — 1차: company_tickers.json, 2차: EDGAR 직접 검색
     if (!(ticker in cikCache)) {
-      const r = await fetch('https://www.sec.gov/files/company_tickers.json', {
-        headers: { 'User-Agent': SEC_UA },
-        next: { revalidate: 86400 },
-      });
-      if (!r.ok) { cikCache[ticker] = null; }
-      else {
-        const data: Record<string, { cik_str: number; ticker: string }> = await r.json();
-        cikCache[ticker] = null;
-        for (const v of Object.values(data)) {
-          if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
-            cikCache[ticker] = v.cik_str; break;
+      cikCache[ticker] = null;
+      try {
+        const r = await fetch('https://www.sec.gov/files/company_tickers.json', {
+          headers: { 'User-Agent': SEC_UA },
+          next: { revalidate: 86400 },
+        });
+        if (r.ok) {
+          const data: Record<string, { cik_str: number; ticker: string }> = await r.json();
+          for (const v of Object.values(data)) {
+            if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
+              cikCache[ticker] = v.cik_str; break;
+            }
           }
         }
+      } catch {}
+
+      if (!cikCache[ticker]) {
+        try {
+          const r = await fetch(
+            `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=&CIK=${encodeURIComponent(ticker)}&type=&dateb=&owner=include&count=1&search_text=&output=atom`,
+            { headers: { 'User-Agent': SEC_UA }, signal: AbortSignal.timeout(8000) },
+          );
+          if (r.ok) {
+            const xml = await r.text();
+            const m = xml.match(/<cik>(\d+)<\/cik>/i);
+            if (m) cikCache[ticker] = parseInt(m[1], 10);
+          }
+        } catch {}
       }
     }
     const cik = cikCache[ticker];
