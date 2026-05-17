@@ -23,9 +23,31 @@ async function fetchYahoo(symbol: string): Promise<{ rawPrice: number; changePct
   const json = await res.json();
   const meta = json.chart.result[0].meta;
   const rawPrice: number = meta.regularMarketPrice;
+
+  // regularMarketChangePercent is reliable during live market hours
+  if (meta.regularMarketChangePercent != null) {
+    return { rawPrice, changePct: meta.regularMarketChangePercent };
+  }
+
+  // Use closes array for accurate day-over-day change.
+  // range=2d returns [day1_close, day2_close] but day2 may be null if market not yet closed.
+  // - If both valid (market closed): prevClose = closes[-2], today = closes[-1]
+  // - If only one valid (market open/pre-market): that single value IS yesterday's close
+  const closes: (number | null)[] = json.chart.result[0].indicators.quote[0].close ?? [];
+  const valid = closes.filter((c): c is number => c != null);
+  let prevClose: number | null = null;
+  if (valid.length >= 2) {
+    prevClose = valid[valid.length - 2]; // yesterday's close (both days available)
+  } else if (valid.length === 1) {
+    prevClose = valid[0]; // only yesterday available — today not yet closed
+  }
+  if (prevClose != null) {
+    return { rawPrice, changePct: ((rawPrice - prevClose) / prevClose) * 100 };
+  }
+
+  // Last resort fallback
   const prev: number = meta.previousClose ?? meta.chartPreviousClose;
-  const changePct = ((rawPrice - prev) / prev) * 100;
-  return { rawPrice, changePct };
+  return { rawPrice, changePct: ((rawPrice - prev) / prev) * 100 };
 }
 
 async function fetchBTC(): Promise<{ rawPrice: number; changePct: number }> {
@@ -52,10 +74,12 @@ function fmtPct(pct: number): string {
 
 export async function GET() {
   try {
-    const [nasdaq, kospi, n225, btc] = await Promise.allSettled([
+    const [nasdaq, kospi, n225, hsi, dax, btc] = await Promise.allSettled([
       fetchYahoo('^IXIC'),
       fetchYahoo('^KS11'),
       fetchYahoo('^N225'),
+      fetchYahoo('^HSI'),
+      fetchYahoo('^GDAXI'),
       fetchBTC(),
     ]);
 
@@ -76,6 +100,16 @@ export async function GET() {
       {
         id: 'N225', name: 'Nikkei 225',
         ...resolve(n225, { rawPrice: 38210.55, changePct: -0.42 }),
+        price: '', change: '', isUp: true,
+      },
+      {
+        id: 'HSI', name: 'Hang Seng Index',
+        ...resolve(hsi, { rawPrice: 22000, changePct: 0.30 }),
+        price: '', change: '', isUp: true,
+      },
+      {
+        id: 'DAX', name: 'DAX',
+        ...resolve(dax, { rawPrice: 18500, changePct: 0.25 }),
         price: '', change: '', isUp: true,
       },
       {

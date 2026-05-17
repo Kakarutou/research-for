@@ -23,7 +23,7 @@ function RfMark() {
   );
 }
 
-export default function TopNav() {
+export default function TopNav({ wide }: { wide?: boolean } = {}) {
   const { user, loading, logout, updateRfcBalance } = useAuth();
   const [modal, setModal]               = useState<"login" | "register" | null>(null);
   const [dropdown, setDropdown]         = useState(false);
@@ -100,12 +100,13 @@ export default function TopNav() {
         boxShadow: "0 1px 0 var(--nav-shadow)",
       }}>
         <nav style={{
-          padding: isMobile ? "10px 16px" : "0 28px",
+          padding: isMobile ? "10px 16px" : "0 40px",
           height: isMobile ? "auto" : 80,
           display: "flex",
           flexDirection: isMobile ? "column" : "row",
           justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center",
-          maxWidth: 1080, margin: "0 auto", gap: isMobile ? 8 : 12,
+          ...(wide ? {} : { maxWidth: 1080, margin: "0 auto", padding: isMobile ? "10px 16px" : "0 28px" }),
+          gap: isMobile ? 8 : 12,
         }}>
           {/* Logo */}
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", flexShrink: 0 }}>

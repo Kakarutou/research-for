@@ -118,7 +118,6 @@ export default async function StockPage({ params }: { params: Promise<{ ticker: 
             <div style={{ display: "grid", gridTemplateColumns: hasContent ? "1fr 360px" : "1fr", gap: 24, alignItems: "stretch" }}>
               {/* Chart */}
               <div style={card}>
-                <div style={sectionTitle}>Price & Volume</div>
                 <StockChart ticker={ticker.toUpperCase()} initialIsUp={isUp} />
               </div>
 
