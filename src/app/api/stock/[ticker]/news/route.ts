@@ -66,96 +66,7 @@ function isSimilar(a: string, b: string): boolean {
   return shared / Math.min(wa.size, wb.size) >= 0.65;
 }
 
-// ── SEC EDGAR 8-K 공시 (실시간, 정부 공개 데이터) ─────────────────────────────
-const cikCache: Record<string, number | null> = {};
-
-const ITEM_LABEL: Record<string, string> = {
-  '1.01': 'Material Agreement Announced',
-  '1.02': 'Material Agreement Terminated',
-  '2.01': 'Acquisition / Asset Sale Completed',
-  '2.03': 'Financial Obligation Created',
-  '5.01': 'Change in Control',
-  '5.02': 'Leadership / Board Change',
-  '7.01': 'Regulation FD Disclosure',
-  '8.01': 'Material Event',
-};
-
-async function fetchSecEdgar(ticker: string): Promise<NewsItem[]> {
-  try {
-    // CIK 조회 — 1차: company_tickers.json, 2차: EDGAR 직접 검색
-    if (!(ticker in cikCache)) {
-      cikCache[ticker] = null;
-      try {
-        const r = await fetch('https://www.sec.gov/files/company_tickers.json', {
-          headers: { 'User-Agent': SEC_UA },
-          next: { revalidate: 86400 },
-        });
-        if (r.ok) {
-          const data: Record<string, { cik_str: number; ticker: string }> = await r.json();
-          for (const v of Object.values(data)) {
-            if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
-              cikCache[ticker] = v.cik_str; break;
-            }
-          }
-        }
-      } catch {}
-
-      if (!cikCache[ticker]) {
-        try {
-          const r = await fetch(
-            `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=&CIK=${encodeURIComponent(ticker)}&type=&dateb=&owner=include&count=1&search_text=&output=atom`,
-            { headers: { 'User-Agent': SEC_UA }, signal: AbortSignal.timeout(8000) },
-          );
-          if (r.ok) {
-            const xml = await r.text();
-            const m = xml.match(/<cik>(\d+)<\/cik>/i);
-            if (m) cikCache[ticker] = parseInt(m[1], 10);
-          }
-        } catch {}
-      }
-    }
-    const cik = cikCache[ticker];
-    if (!cik) return [];
-
-    const pad = String(cik).padStart(10, '0');
-    const sub = await fetch(`https://data.sec.gov/submissions/CIK${pad}.json`, {
-      headers: { 'User-Agent': SEC_UA }, cache: 'no-store',
-    });
-    if (!sub.ok) return [];
-
-    const data = await sub.json();
-    const recent = data.filings?.recent ?? {};
-    const forms: string[]  = recent.form         ?? [];
-    const dates: string[]  = recent.filingDate   ?? [];
-    const accns: string[]  = recent.accessionNumber ?? [];
-    const itemCodes: string[] = recent.items     ?? [];
-
-    const cutoff = Math.floor(Date.now() / 1000) - 90 * 24 * 3600; // 최근 90일
-    const result: NewsItem[] = [];
-
-    for (let i = 0; i < forms.length && result.length < 12; i++) {
-      if (forms[i] !== '8-K' && forms[i] !== '6-K') continue;
-      const ts = dates[i] ? Math.floor(new Date(dates[i]).getTime() / 1000) : 0;
-      if (ts < cutoff) break;
-
-      // 첫 번째 item 코드 추출
-      const code = (itemCodes[i] ?? '').split(',')[0].replace(/\s/g, '');
-      if (code === '2.02') continue; // 어닝은 별도 탭에서 처리
-
-      const label = ITEM_LABEL[code] ?? `${forms[i]} Filing`;
-      const accn  = accns[i];
-      const url   = `https://www.sec.gov/Archives/edgar/data/${cik}/${accn.replace(/-/g, '')}/${accn}-index.htm`;
-
-      result.push({
-        title: label,
-        source: 'SEC EDGAR',
-        publishedAt: ts,
-        url,
-      });
-    }
-    return result;
-  } catch { return []; }
-}
+// SEC EDGAR 공시는 disclosures/route.ts에서 전담 처리 — news route에서 중복 생성 제거
 
 // ── Google News RSS (무료, 상업용, 구글 집계 ~1-5분 딜레이) ──────────────────
 async function fetchGoogleNews(ticker: string): Promise<NewsItem[]> {
@@ -243,7 +154,7 @@ async function fetchFinnhub(ticker: string): Promise<NewsItem[]> {
   if (!key) return [];
   try {
     const to   = new Date();
-    const from = new Date(to.getTime() - 7 * 24 * 3600 * 1000); // 최근 7일
+    const from = new Date(to.getTime() - 30 * 24 * 3600 * 1000); // 최근 30일
     const fmt  = (d: Date) => d.toISOString().slice(0, 10);
     const res  = await fetch(
       `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(ticker)}&from=${fmt(from)}&to=${fmt(to)}&token=${key}`,
@@ -353,16 +264,16 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
     return NextResponse.json(news);
   }
 
-  const [globe, google, sec, yahoo, finnhub] = await Promise.all([
+  const [globe, google, yahoo, finnhub] = await Promise.all([
     fetchGlobeNewswire(ticker),
     fetchGoogleNews(ticker),
-    fetchSecEdgar(ticker),
     fetchYahooFinance(ticker),
     fetchFinnhub(ticker),
   ]);
 
-  // 합치기: Finnhub·Yahoo(실시간) > GlobeNewswire(공보) > Google News(집계) > SEC EDGAR(공시)
-  const combined = [...finnhub, ...yahoo, ...globe, ...google, ...sec]
+  // 합치기: Finnhub·Yahoo(실시간) > GlobeNewswire(공보) > Google News(집계)
+  // SEC 공시는 disclosures/route.ts 전담 (중복 방지)
+  const combined = [...finnhub, ...yahoo, ...globe, ...google]
     .filter(n => isTickerRelevant(n.title, ticker));
 
   // 날짜순 정렬 후 유사 기사 중복 제거

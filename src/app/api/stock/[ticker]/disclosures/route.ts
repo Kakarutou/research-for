@@ -271,7 +271,7 @@ export async function GET(_: NextRequest, { params }: { params: Promise<{ ticker
     let form4Count = 0;
     let form3Count = 0;
 
-    for (let i = 0; i < forms.length && result.length < 40; i++) {
+    for (let i = 0; i < forms.length && result.length < 60; i++) {
       if (!TARGET_FORMS.has(forms[i])) continue;
 
       const form  = forms[i];

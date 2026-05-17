@@ -42,16 +42,6 @@ const INSIDER_BUY_KW = [
   "purchases shares","bought shares",
   "내부자 매수","사내이사 매수","임원 주식 매수","임원 매수","대주주 매수",
 ];
-const DISC_KW = [
-  "sec filing","10-k","10-q","8-k","proxy statement","ipo",
-  "secondary offering","merger","acquisition","acquires","dividend",
-  "buyback","stock split","share repurchase","going public","listing",
-  "spinoff","spin-off","delist","regulatory filing","annual report",
-  "공시","수시공시","사업보고서","분기보고서","반기보고서","연간보고서",
-  "위임장","주주총회 위임장","대량보유","대량보유 보고서",
-  "합병","인수","배당","자사주","주식분할","상장","상장폐지",
-  "공모","유상증자","무상증자","매각","분사",
-];
 const POS_KW = [
   "surges","jumps","soars","rallies","rally","spikes","skyrockets",
   "climbs","rises","rebounds","recovers","breakout","short squeeze",
@@ -187,16 +177,16 @@ function classify(item: NewsItem): Tab {
   // 1. 공식 공시 소스 → 공시
   if (item.source === 'SEC EDGAR' || item.source === 'DART') return "공시";
 
-  // 2. 어닝콜 키워드
-  if (EARNINGS_KW.some(w => t.includes(w))) return "어닝콜";
-
-  // 3. 내부자 매도 → 악재
+  // 2. 내부자 매도 → 악재 (어닝콜 체크 전에 먼저)
   if (INSIDER_SELL_KW.some(w => t.includes(w))) return "악재";
 
-  // 4. 긍/부정 스코어 — 부정 우세 시 악재
+  // 3. 긍/부정 스코어 — EARNINGS_KW보다 먼저 체크해야 어닝 쇼크가 악재로 분류됨
   const pos = POS_KW.filter(w => t.includes(w)).length;
   const neg = NEG_KW.filter(w => t.includes(w)).length;
-  if (neg > pos) return "악재";
+  if (neg > 0 && neg >= pos) return "악재";  // 동점도 neg > 0이면 악재
+
+  // 4. 어닝콜 키워드 (긍정적/중립 실적 뉴스)
+  if (EARNINGS_KW.some(w => t.includes(w))) return "어닝콜";
 
   // 5. 내부자 매수 → 뉴스
   if (INSIDER_BUY_KW.some(w => t.includes(w))) return "뉴스";

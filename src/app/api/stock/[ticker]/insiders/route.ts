@@ -8,16 +8,35 @@ const cikCache: Record<string, number | null> = {};
 
 async function getCik(ticker: string): Promise<number | null> {
   if (ticker in cikCache) return cikCache[ticker];
-  const res = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: HEADERS, next: { revalidate: 86400 } });
-  if (!res.ok) { cikCache[ticker] = null; return null; }
-  const data: Record<string, { cik_str: number; ticker: string }> = await res.json();
-  for (const v of Object.values(data)) {
-    if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
-      cikCache[ticker] = v.cik_str;
-      return v.cik_str;
-    }
-  }
   cikCache[ticker] = null;
+
+  // 1차: company_tickers.json
+  try {
+    const res = await fetch('https://www.sec.gov/files/company_tickers.json', { headers: HEADERS, next: { revalidate: 86400 } });
+    if (res.ok) {
+      const data: Record<string, { cik_str: number; ticker: string }> = await res.json();
+      for (const v of Object.values(data)) {
+        if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
+          cikCache[ticker] = v.cik_str;
+          return v.cik_str;
+        }
+      }
+    }
+  } catch {}
+
+  // 2차 fallback: EDGAR 직접 검색 (외국기업·최근상장)
+  try {
+    const res = await fetch(
+      `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=&CIK=${encodeURIComponent(ticker)}&type=&dateb=&owner=include&count=1&search_text=&output=atom`,
+      { headers: HEADERS, signal: AbortSignal.timeout(8000) },
+    );
+    if (res.ok) {
+      const xml = await res.text();
+      const m = xml.match(/<cik>(\d+)<\/cik>/i);
+      if (m) { cikCache[ticker] = parseInt(m[1], 10); return cikCache[ticker]; }
+    }
+  } catch {}
+
   return null;
 }
 
@@ -35,6 +54,7 @@ interface Form4Row {
   shares: string;
   price: string;
   accn: string;
+  cik: number;        // 회사 CIK (URL 생성에 필요)
 }
 
 async function getRecentForm4s(cik: number): Promise<Form4Row[]> {
@@ -89,7 +109,7 @@ async function parseForm4s(cik: number, rows: { date: string; accn: string }[]):
         const sharesDeep = block.match(/<transactionShares>[\s\S]*?<value>([^<]*)</)?.[1]?.trim() ?? '';
         const shares = getB('transactionShares') || sharesDeep;
         const price  = block.match(/<transactionPricePerShare>[\s\S]*?<value>([^<]*)</)?.[1]?.trim() ?? '';
-        if (code && name) results.push({ name, title, date, code, shares, price, accn });
+        if (code && name) results.push({ name, title, date, code, shares, price, accn, cik });
       }
     } catch { /* skip malformed filings */ }
   }));
@@ -110,7 +130,7 @@ function toNewsItem(row: Form4Row): NewsItem {
     title,
     source: 'SEC Form 4',
     publishedAt: ts,
-    url: `https://www.sec.gov/Archives/edgar/data/${cleanAccn}/${row.accn}-index.htm`,
+    url: `https://www.sec.gov/Archives/edgar/data/${row.cik}/${cleanAccn}/${row.accn}-index.htm`,
   };
 }
 
