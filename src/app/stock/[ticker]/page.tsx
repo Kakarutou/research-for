@@ -7,8 +7,7 @@ import NewsCard from "@/components/NewsCard";
 import type { StockInfo } from "@/app/api/stock/[ticker]/route";
 import type { NewsItem } from "@/app/api/stock/[ticker]/news/route";
 import type { EarningsItem } from "@/app/api/stock/[ticker]/earnings/route";
-
-const BASE = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000';
+import { headers } from 'next/headers';
 
 const card: React.CSSProperties = {
   background: "rgba(255,255,255,0.92)",
@@ -28,6 +27,11 @@ const sectionTitle: React.CSSProperties = {
 
 export default async function StockPage({ params }: { params: Promise<{ ticker: string }> }) {
   const { ticker } = await params;
+
+  const headersList = await headers();
+  const host = headersList.get('host') ?? 'localhost:3000';
+  const proto = headersList.get('x-forwarded-proto') ?? 'http';
+  const BASE = `${proto}://${host}`;
 
   const [liveInfo, newsRaw, insiders, disclosures, earnings] = await Promise.all([
     fetch(`${BASE}/api/stock/${encodeURIComponent(ticker)}`, { cache: 'no-store' })
