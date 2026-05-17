@@ -165,18 +165,41 @@ const cikCache: Record<string, number | null> = {};
 
 async function getCik(ticker: string): Promise<number | null> {
   if (ticker in cikCache) return cikCache[ticker];
-  const res = await fetch('https://www.sec.gov/files/company_tickers.json', {
-    headers: { 'User-Agent': UA },
-    next: { revalidate: 86400 },
-  });
-  if (!res.ok) { cikCache[ticker] = null; return null; }
-  const data: Record<string, { cik_str: number; ticker: string }> = await res.json();
-  for (const v of Object.values(data)) {
-    if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
-      cikCache[ticker] = v.cik_str;
-      return v.cik_str;
+
+  // 1차: company_tickers.json (미국 내국 기업 + 일부 외국기업)
+  try {
+    const res = await fetch('https://www.sec.gov/files/company_tickers.json', {
+      headers: { 'User-Agent': UA },
+      next: { revalidate: 86400 },
+    });
+    if (res.ok) {
+      const data: Record<string, { cik_str: number; ticker: string }> = await res.json();
+      for (const v of Object.values(data)) {
+        if (v.ticker.toUpperCase() === ticker.toUpperCase()) {
+          cikCache[ticker] = v.cik_str;
+          return v.cik_str;
+        }
+      }
     }
-  }
+  } catch {}
+
+  // 2차 fallback: EDGAR 직접 검색 (외국계·최근상장·ADR 등 모든 SEC 등록 기업)
+  try {
+    const res = await fetch(
+      `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=&CIK=${encodeURIComponent(ticker)}&type=&dateb=&owner=include&count=1&search_text=&output=atom`,
+      { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(8000) },
+    );
+    if (res.ok) {
+      const xml = await res.text();
+      const m = xml.match(/<cik>(\d+)<\/cik>/i);
+      if (m) {
+        const cik = parseInt(m[1], 10);
+        cikCache[ticker] = cik;
+        return cik;
+      }
+    }
+  } catch {}
+
   cikCache[ticker] = null;
   return null;
 }
