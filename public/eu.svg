@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="600" viewBox="0 0 900 600">
+<rect width="900" height="600" fill="#003399"/>
+<defs><polygon id="s" points="0,-1 0.2245,-0.309 0.951,-0.309 0.363,0.118 0.588,0.809 0,0.382 -0.588,0.809 -0.363,0.118 -0.951,-0.309 -0.2245,-0.309" fill="#FFCC00"/></defs>
+<use href="#s" transform="translate(450,125) scale(24)"/>
+<use href="#s" transform="translate(537.5,148.4) scale(24)"/>
+<use href="#s" transform="translate(601.6,212.5) scale(24)"/>
+<use href="#s" transform="translate(625,300) scale(24)"/>
+<use href="#s" transform="translate(601.6,387.5) scale(24)"/>
+<use href="#s" transform="translate(537.5,451.6) scale(24)"/>
+<use href="#s" transform="translate(450,475) scale(24)"/>
+<use href="#s" transform="translate(362.5,451.6) scale(24)"/>
+<use href="#s" transform="translate(298.4,387.5) scale(24)"/>
+<use href="#s" transform="translate(275,300) scale(24)"/>
+<use href="#s" transform="translate(298.4,212.5) scale(24)"/>
+<use href="#s" transform="translate(362.5,148.4) scale(24)"/>
+</svg>

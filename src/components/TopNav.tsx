@@ -3,10 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import AuthModal from "@/components/AuthModal";
+import SearchBox from "@/components/SearchBox";
 import AttendanceCalendar from "@/components/AttendanceCalendar";
 import LeaderboardModal from "@/components/LeaderboardModal";
 import MyBetsModal from "@/components/MyBetsModal";
-import VisionModal from "@/components/VisionModal";
 import RfcShopModal from "@/components/RfcShopModal";
 import MyPageModal from "@/components/MyPageModal";
 import SettingsModal from "@/components/SettingsModal";
@@ -23,7 +23,7 @@ function RfMark() {
   );
 }
 
-export default function TopNav({ wide }: { wide?: boolean } = {}) {
+export default function TopNav({ showSearch }: { showSearch?: boolean } = {}) {
   const { user, loading, logout, updateRfcBalance } = useAuth();
   const [modal, setModal]               = useState<"login" | "register" | null>(null);
   const [dropdown, setDropdown]         = useState(false);
@@ -32,7 +32,6 @@ export default function TopNav({ wide }: { wide?: boolean } = {}) {
   const [showAttendance, setShowAttendance] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showMyBets, setShowMyBets]     = useState(false);
-  const [showVision, setShowVision]     = useState(false);
   const [showShop, setShowShop]         = useState(false);
   const [showMyPage, setShowMyPage]     = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -100,33 +99,40 @@ export default function TopNav({ wide }: { wide?: boolean } = {}) {
         boxShadow: "0 1px 0 var(--nav-shadow)",
       }}>
         <nav style={{
-          padding: isMobile ? "10px 16px" : "0 40px",
+          padding: isMobile ? "10px 16px" : "0 32px",
           height: isMobile ? "auto" : 80,
           display: "flex",
           flexDirection: isMobile ? "column" : "row",
           justifyContent: "space-between", alignItems: isMobile ? "flex-start" : "center",
-          ...(wide ? {} : { maxWidth: 1080, margin: "0 auto", padding: isMobile ? "10px 16px" : "0 28px" }),
           gap: isMobile ? 8 : 12,
         }}>
-          {/* Logo */}
-          <Link href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", flexShrink: 0 }}>
-            <RfMark />
-            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: 4 }}>
-              <span style={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 23, fontWeight: 800, letterSpacing: "-0.04em", color: "white" }}>
-                Research For
-              </span>
-              <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: "rgba(255,255,255,0.65)", letterSpacing: "0.16em", textTransform: "uppercase" }}>
-                Stock · Crypto
-              </span>
-            </div>
-          </Link>
+          {/* Logo + search (left group) */}
+          <div style={{
+            display: "flex",
+            flexDirection: isMobile ? "column" : "row",
+            alignItems: isMobile ? "flex-start" : "center",
+            gap: isMobile ? 10 : 16,
+            ...(isMobile ? { width: "100%" } : { flexShrink: 0 }),
+          }}>
+            <Link href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", flexShrink: 0 }}>
+              <RfMark />
+              <div style={{ display: "flex", flexDirection: "column", lineHeight: 1, gap: 4 }}>
+                <span style={{ fontFamily: "var(--font-sans), sans-serif", fontSize: 23, fontWeight: 800, letterSpacing: "-0.04em", color: "white" }}>
+                  Research For
+                </span>
+                <span style={{ fontFamily: "var(--font-mono), monospace", fontSize: 12, color: "rgba(255,255,255,0.65)", letterSpacing: "0.16em", textTransform: "uppercase" }}>
+                  Stock · Crypto
+                </span>
+              </div>
+            </Link>
+            {showSearch && <SearchBox compact width={isMobile ? 240 : 360} />}
+          </div>
 
           {/* Nav pill */}
           {loading ? (
             <div style={{ width: 280, height: 42, background: "rgba(0,0,0,0.05)", borderRadius: 12 }} />
           ) : (
             <div style={PILL}>
-              <button style={PB} onClick={() => setShowVision(true)}>Vision</button>
               <button style={PB} onClick={() => setShowShop(true)}>RFC Shop</button>
               <button style={PB} onClick={() => requireAuth(() => setShowMyBets(true))}>My Bets</button>
               <button style={PB} onClick={() => setShowLeaderboard(true)}>Leaderboard</button>
@@ -253,7 +259,6 @@ export default function TopNav({ wide }: { wide?: boolean } = {}) {
       )}
       {showLeaderboard && <LeaderboardModal onClose={() => setShowLeaderboard(false)} />}
       {showMyBets    && user && <MyBetsModal    onClose={() => setShowMyBets(false)} />}
-      {showVision    && <VisionModal            onClose={() => setShowVision(false)} />}
       {showShop      && <RfcShopModal           onClose={() => setShowShop(false)} />}
       {showMyPage    && user && <MyPageModal    onClose={() => setShowMyPage(false)} />}
       {showSettings  && user && <SettingsModal  onClose={() => setShowSettings(false)} />}

@@ -10,7 +10,7 @@ const NAV_TABS = [
   { id: "reports", label: "Reports", href: "/reports" },
 ];
 
-export default function SearchBox({ hideTabs, compact }: { hideTabs?: boolean; compact?: boolean } = {}) {
+export default function SearchBox({ hideTabs, compact, width }: { hideTabs?: boolean; compact?: boolean; width?: number } = {}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<SearchResult[]>([]);
@@ -90,7 +90,7 @@ export default function SearchBox({ hideTabs, compact }: { hideTabs?: boolean; c
   if (compact) {
     const btnSize = 32;
     return (
-      <div ref={wrapperRef} style={{ position: "relative", width: 260 }}>
+      <div ref={wrapperRef} style={{ position: "relative", width: width ?? 260, maxWidth: "100%" }}>
         <div style={{
           background: "rgba(255,255,255,0.15)",
           backdropFilter: "blur(16px)",
